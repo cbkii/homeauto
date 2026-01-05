@@ -2,7 +2,7 @@
 set -euo pipefail
 
 read -rp "Remove HA stack and configs? [y/N] " yn
-[[ "$yn" != "y" ]] && exit 0
+[[ $yn != "y" ]] && exit 0
 
 docker compose down -v
 rm -rf ha zigbee2mqtt mosquitto

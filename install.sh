@@ -5,6 +5,13 @@ set -euo pipefail
 
 source .env
 
+if [[ -z ${ZIGBEE_DEVICE-} || $ZIGBEE_DEVICE == *"XXXX"* ]]; then
+  echo "[!] ZIGBEE_DEVICE not set, running auto-discovery"
+  ./system/zigbee-discover.sh
+  echo "Update .env with the selected ZIGBEE_DEVICE and re-run install."
+  exit 1
+fi
+
 apt update
 apt install -y docker.io docker-compose-plugin bluez adb mosquitto-clients
 
@@ -15,7 +22,7 @@ cp scripts/bt/*.sh scripts/adb/*.sh /usr/local/bin/ha-actions/
 chmod +x /usr/local/bin/ha-actions/*.sh
 
 install -d mosquitto/config
-cat > mosquitto/config/mosquitto.conf <<EOF
+cat >mosquitto/config/mosquitto.conf <<EOF
 listener 1883
 allow_anonymous false
 password_file /mosquitto/config/passwd
