@@ -1,4 +1,4 @@
-# ha-pi-stack
+# homeauto stack
 
 Home Assistant Docker-based stack for Raspberry Pi 5 (Debian / Raspberry Pi OS).
 
