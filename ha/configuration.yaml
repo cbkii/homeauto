@@ -1,0 +1,7 @@
+default_config:
+
+mqtt:
+
+shell_command:
+  bt_connect: "/usr/local/bin/ha-actions/bt_connect.sh"
+  tv_power: "/usr/local/bin/ha-actions/tv_power.sh"

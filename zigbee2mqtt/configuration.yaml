@@ -1,0 +1,12 @@
+homeassistant: true
+
+mqtt:
+  server: mqtt://127.0.0.1
+  user: ha
+  password: changeme
+
+serial:
+  port: /dev/ttyUSB0
+
+frontend: true
+permit_join: false
