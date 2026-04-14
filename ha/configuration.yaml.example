@@ -5,10 +5,32 @@ mqtt:
   username: !secret mqtt_user
   password: !secret mqtt_password
 
-shell_command:
-  bt_connect: "BT_DEVICE_MAC='{{ states(\"input_text.bt_device_mac\") }}' /usr/local/bin/ha-actions/bt_connect.sh"
-  bt_pair_trust: "BT_DEVICE_MAC='{{ states(\"input_text.bt_device_mac\") }}' BT_PAIR_PIN='{{ states(\"input_text.bt_pair_pin\") }}' /usr/local/bin/ha-actions/bt_pair_trust.sh"
-  tv_power: "ANDROID_TV_IP='{{ states(\"input_text.android_tv_ip\") }}' /usr/local/bin/ha-actions/tv_power.sh"
-  tv_home: "ANDROID_TV_IP='{{ states(\"input_text.android_tv_ip\") }}' /usr/local/bin/ha-actions/tv_home.sh"
-  tv_back: "ANDROID_TV_IP='{{ states(\"input_text.android_tv_ip\") }}' /usr/local/bin/ha-actions/tv_back.sh"
-  tv_launch_netflix: "ANDROID_TV_IP='{{ states(\"input_text.android_tv_ip\") }}' /usr/local/bin/ha-actions/tv_launch_app.sh com.netflix.ninja"
+# ---------------------------------------------------------------------------
+# Helper actions (ADB / Bluetooth)
+# ---------------------------------------------------------------------------
+# Helper scripts run on the HOST via the ha-action-bridge systemd service
+# (scripts/ha-action-bridge/ha-action-bridge.sh).  Home Assistant triggers
+# them by publishing MQTT messages — NOT via shell_command, because
+# shell_command executes inside the HA container where adb and bluetoothctl
+# are not available.
+#
+# In your automations / scripts, use the action:
+#   action: mqtt.publish
+#   data:
+#     topic: ha/actions/<action>
+#     payload: "<required values — see docs/ARCHITECTURE.md>"
+#
+# Payload schemas:
+#   ha/actions/tv_power        <android-tv-ip>
+#   ha/actions/tv_home         <android-tv-ip>
+#   ha/actions/tv_back         <android-tv-ip>
+#   ha/actions/tv_launch_app   <android-tv-ip> <app.package.id>
+#   ha/actions/bt_connect      <bt-mac-address>
+#   ha/actions/bt_pair_trust   <bt-mac-address> [pin]
+#
+# Example automation action (YAML):
+#   - action: mqtt.publish
+#     data:
+#       topic: ha/actions/tv_power
+#       payload: "{{ states('input_text.android_tv_ip') }}"
+# ---------------------------------------------------------------------------

@@ -45,7 +45,18 @@ fi
 
 docker compose down -v --remove-orphans || true
 
+# Stop and remove the ha-action-bridge service
+if systemctl is-active --quiet ha-action-bridge 2>/dev/null; then
+  systemctl stop ha-action-bridge
+fi
+systemctl disable ha-action-bridge 2>/dev/null || true
+rm -f /etc/systemd/system/ha-action-bridge.service
+systemctl daemon-reload 2>/dev/null || true
+
+# Remove installed host binaries
+rm -f /usr/local/bin/ha-action-bridge.sh
 rm -rf /usr/local/bin/ha-actions
+rm -f /etc/ha-action-bridge.env
 
 if [[ $PURGE_DATA -eq 1 ]]; then
   rm -rf ha zigbee2mqtt mosquitto
