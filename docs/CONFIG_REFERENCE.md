@@ -114,6 +114,19 @@ Controls the three Docker services.  Key settings:
 | `/run/dbus` volume | `homeassistant` | D-Bus access for Bluetooth integration |
 | `/run/udev` volume | `zigbee2mqtt` | udev event access for adapter hot-plug |
 | `devices` (`${ZIGBEE_DEVICE}:/dev/zigbee`) | `zigbee2mqtt` | Coordinator device mapping |
+| `MQTT_USER` / `MQTT_PASS` env vars | `mosquitto` | Required for the Mosquitto healthcheck |
+| `depends_on: condition: service_healthy` | `homeassistant`, `zigbee2mqtt` | Wait for Mosquitto to be healthy before starting |
+
+### Image version policy
+
+| Service | Tag | Notes |
+|---|---|---|
+| `homeassistant` | `:stable` | Tracks current HA stable release |
+| `mosquitto` | `:2` | Tracks latest Mosquitto 2.x |
+| `zigbee2mqtt` | `:latest` | Tracks latest Z2M release |
+
+All images are re-pulled on `./update.sh --restart`.
+See `docs/SUPPORT_BOUNDARIES.md` for the version pinning rationale.
 
 ---
 
