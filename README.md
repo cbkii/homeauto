@@ -1,119 +1,101 @@
 # homeauto stack
 
-Production-lean Home Assistant Container stack for Raspberry Pi OS / Debian 12 (Bookworm) with Docker Compose.
+Production-lean Home Assistant Container stack for Debian 12 / Raspberry Pi OS Bookworm.
+Managed with Docker Compose.
 
-## Included services
-- Home Assistant (Container)
-- Mosquitto (MQTT broker with auth)
-- Zigbee2MQTT (serial adapter via `/dev/serial/by-id/*`)
-- Android TV helper scripts over ADB (LAN-only)
-- Bluetooth helper scripts (BlueZ host tooling)
+## Services
 
-## Security defaults
-- MQTT anonymous access is disabled.
-- Helper scripts reject non-LAN Android TV targets.
-- Bluetooth scripts disable discoverable/pairable modes after actions.
-- No WAN exposure or reverse proxy automation is included.
+| Service | Description | Default port |
+|---|---|---|
+| Home Assistant | Smart home controller | 8123 |
+| Mosquitto | MQTT broker (auth required) | 1883 |
+| Zigbee2MQTT | Zigbee coordinator bridge + UI | 8080 |
+
+**Host services (systemd):**
+- `ha-action-bridge` — host-side MQTT subscriber that executes ADB and Bluetooth helper scripts on behalf of Home Assistant
+
+## Quick start
+
+```bash
+# 1. Configure
+cp .env.example .env && nano .env
+./system/zigbee-discover.sh   # get ZIGBEE_DEVICE path
+
+# 2. Install
+sudo ./install.sh
+
+# 3. Open
+http://<host-ip>:8123
+```
+
+See [docs/OPERATIONS.md](docs/OPERATIONS.md) for the full setup and maintenance guide.
+
+## Documentation
+
+| Document | Purpose |
+|---|---|
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | How components fit together, action bridge design |
+| [docs/OPERATIONS.md](docs/OPERATIONS.md) | Install, update, uninstall, day-to-day ops |
+| [docs/CONFIG_REFERENCE.md](docs/CONFIG_REFERENCE.md) | All configuration files and variables |
+| [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | Common problems and fixes |
+| [docs/SMOKE_TEST_RUNBOOK.md](docs/SMOKE_TEST_RUNBOOK.md) | Release smoke testing procedure |
+| [FINALIZATION_CHECKLIST.md](FINALIZATION_CHECKLIST.md) | Implementation status, roadmap, release readiness |
+
+## Key design decisions
+
+- **Home Assistant Container** (not HA OS / Supervisor) — no add-on store.
+- **Host networking** (`network_mode: host`) for all containers — required for
+  LAN multicast and simplifies MQTT addressing.
+- **MQTT-based action bridge** — ADB and Bluetooth helper scripts run on the
+  host (not inside the HA container) and are triggered via MQTT publish.
+  See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for why this is necessary.
+- **Auth required** — Mosquitto requires credentials; no anonymous access.
+- **No WAN exposure** — no reverse proxy or port-forwarding automation included.
+- **Stable Zigbee path** — coordinator mapped via `/dev/serial/by-id/…` to
+  avoid symlink churn.
 
 ## Prerequisites
+
 - Debian 12 / Raspberry Pi OS Bookworm (64-bit)
-- Internet access for package/image pulls
-- User with sudo access
+- Internet access for package and image pulls
+- User with `sudo` access
 - Zigbee coordinator connected (if using Zigbee2MQTT)
 
-## Configuration
-1. Copy and edit environment file:
-   ```bash
-   cp .env.example .env
-   nano .env
-   ```
-2. Set `ZIGBEE_DEVICE` to a stable path under `/dev/serial/by-id/*`.
-   - Use discovery helper:
-     ```bash
-     ./system/zigbee-discover.sh
-     ```
+## Helper actions (ADB / Bluetooth)
 
-## Install
-```bash
-sudo ./install.sh
+Helper scripts are **not** callable via HA `shell_command` — `shell_command`
+runs inside the container, where `adb` and `bluetoothctl` are not available.
+Instead, Home Assistant publishes MQTT messages and the host-side
+`ha-action-bridge` service executes the scripts.
+
+From an HA automation:
+
+```yaml
+action:
+  - action: mqtt.publish
+    data:
+      topic: ha/actions/tv_power
+      payload: "{{ states('input_text.android_tv_ip') }}"
 ```
 
-Install behavior:
-- Installs required packages (`docker.io`, `docker-compose-plugin`, `bluez`, `adb`, `mosquitto-clients`)
-- Creates missing config/data directories
-- Creates MQTT password file only if missing (or when explicitly rotating)
-- Starts stack by default
+Full topic/payload schema: [docs/ARCHITECTURE.md § MQTT action topics](docs/ARCHITECTURE.md#mqtt-action-topics-and-payloads)
 
-Useful flags:
-```bash
-sudo ./install.sh --no-start
-sudo ./install.sh --rotate-mqtt-password
-```
+## Security defaults
 
-## Update / upgrade
-Pull and restart stack:
-```bash
-./update.sh --restart
-```
-
-Pull only:
-```bash
-./update.sh --pull-only
-```
-
-Combined helper (reconcile host deps + restart stack):
-```bash
-./scripts/stack/upgrade.sh
-```
-
-## Uninstall / rollback
-Remove containers and installed helper scripts, preserve data by default:
-```bash
-sudo ./uninstall.sh --yes
-```
-
-Purge all local stack data too:
-```bash
-sudo ./uninstall.sh --yes --purge-data
-```
-
-## Home Assistant notes
-- This repo targets **Home Assistant Container**, not HA OS or Supervisor add-ons.
-- `ha/configuration.yaml` ships shell commands for BT/ADB helpers.
-- Put sensitive values in `ha/secrets.yaml` (copy from `ha/secrets.yaml.example`).
-
-## Bluetooth notes
-- Host BlueZ service is required.
-- HA container mounts `/run/dbus`.
-- `homeassistant` remains `privileged: true` for compatibility in this phase.
-
-## Android TV notes
-Available helper scripts:
-- `tv_power.sh`
-- `tv_home.sh`
-- `tv_back.sh`
-- `tv_launch_app.sh <android.package.id>`
-
-All require `ANDROID_TV_IP` and enforce RFC1918 LAN-only addresses.
-
-## Zigbee2MQTT notes
-- Config file: `zigbee2mqtt/configuration.yaml`
-- Default serial path in-container: `/dev/zigbee`
-- Update Zigbee2MQTT MQTT credentials to match Mosquitto values.
+- MQTT requires authentication — `allow_anonymous false`.
+- ADB scripts enforce RFC1918 LAN-only IP targets.
+- Bluetooth scripts disable discoverable/pairable modes after use.
+- No internet-facing services or port forwarding configured.
 
 ## Quality gates
-Run local validations:
+
 ```bash
 ./scripts/qa.sh
 ```
 
-This checks:
-- `shellcheck` on all `*.sh`
-- `docker compose config`
+Runs `shellcheck` across all `*.sh` files and validates `docker compose config`.
 
-## Operations checklist
-See `FINALIZATION_CHECKLIST.md` for the full implementation and completion-tracking plan.
+## Status and roadmap
 
-## Access
-Home Assistant web UI:
-- `http://<host-ip>:8123`
+See [FINALIZATION_CHECKLIST.md](FINALIZATION_CHECKLIST.md).
+
