@@ -1,0 +1,14 @@
+default_config:
+
+mqtt:
+  broker: 127.0.0.1
+  username: !secret mqtt_user
+  password: !secret mqtt_password
+
+shell_command:
+  bt_connect: "BT_DEVICE_MAC='{{ states(\"input_text.bt_device_mac\") }}' /usr/local/bin/ha-actions/bt_connect.sh"
+  bt_pair_trust: "BT_DEVICE_MAC='{{ states(\"input_text.bt_device_mac\") }}' BT_PAIR_PIN='{{ states(\"input_text.bt_pair_pin\") }}' /usr/local/bin/ha-actions/bt_pair_trust.sh"
+  tv_power: "ANDROID_TV_IP='{{ states(\"input_text.android_tv_ip\") }}' /usr/local/bin/ha-actions/tv_power.sh"
+  tv_home: "ANDROID_TV_IP='{{ states(\"input_text.android_tv_ip\") }}' /usr/local/bin/ha-actions/tv_home.sh"
+  tv_back: "ANDROID_TV_IP='{{ states(\"input_text.android_tv_ip\") }}' /usr/local/bin/ha-actions/tv_back.sh"
+  tv_launch_netflix: "ANDROID_TV_IP='{{ states(\"input_text.android_tv_ip\") }}' /usr/local/bin/ha-actions/tv_launch_app.sh com.netflix.ninja"

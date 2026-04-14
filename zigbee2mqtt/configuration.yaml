@@ -2,11 +2,11 @@ homeassistant: true
 
 mqtt:
   server: mqtt://127.0.0.1
-  user: ha
-  password: changeme
+  user: REPLACE_ME
+  password: REPLACE_ME
 
 serial:
-  port: /dev/ttyUSB0
+  port: /dev/zigbee
 
 frontend: true
 permit_join: false

@@ -1,18 +1,25 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+shopt -s nullglob
+
 echo "[*] Discovering Zigbee coordinator..."
 
-candidates=$(ls /dev/serial/by-id/* 2>/dev/null || true)
+candidates=(/dev/serial/by-id/*)
 
-if [[ -z "$candidates" ]]; then
-  echo "No Zigbee USB devices found."
+if [[ ${#candidates[@]} -eq 0 ]]; then
+  echo "No Zigbee USB devices found under /dev/serial/by-id/."
   exit 1
 fi
 
-echo "Found:"
-select dev in $candidates; do
-  [[ -n "$dev" ]] || exit 1
+echo "Found devices:"
+PS3="Select device number (or Ctrl+C to cancel): "
+select dev in "${candidates[@]}"; do
+  if [[ -z "${dev:-}" ]]; then
+    echo "Invalid selection"
+    continue
+  fi
+
   echo "ZIGBEE_DEVICE=$dev"
   exit 0
 done
