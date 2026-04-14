@@ -3,6 +3,7 @@ services:
     image: ghcr.io/home-assistant/home-assistant:stable
     container_name: homeassistant
     network_mode: host
+    # Kept for compatibility per current project direction (can be reduced later).
     privileged: true
     environment:
       - TZ=${TZ}
@@ -18,17 +19,20 @@ services:
     volumes:
       - ./mosquitto/config:/mosquitto/config
       - ./mosquitto/data:/mosquitto/data
+      - ./mosquitto/log:/mosquitto/log
     restart: unless-stopped
 
   zigbee2mqtt:
     image: koenkk/zigbee2mqtt
     container_name: zigbee2mqtt
     network_mode: host
+    depends_on:
+      - mosquitto
     volumes:
       - ./zigbee2mqtt:/app/data
       - /run/udev:/run/udev:ro
     devices:
-      - ${ZIGBEE_DEVICE}:/dev/ttyUSB0
+      - ${ZIGBEE_DEVICE}:/dev/zigbee
     environment:
       - TZ=${TZ}
     restart: unless-stopped

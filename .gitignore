@@ -1,0 +1,5 @@
+.env
+ha/secrets.yaml
+mosquitto/config/passwd
+
+artifacts/

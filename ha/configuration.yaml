@@ -1,7 +1,36 @@
 default_config:
 
 mqtt:
+  broker: 127.0.0.1
+  username: !secret mqtt_user
+  password: !secret mqtt_password
 
-shell_command:
-  bt_connect: "/usr/local/bin/ha-actions/bt_connect.sh"
-  tv_power: "/usr/local/bin/ha-actions/tv_power.sh"
+# ---------------------------------------------------------------------------
+# Helper actions (ADB / Bluetooth)
+# ---------------------------------------------------------------------------
+# Helper scripts run on the HOST via the ha-action-bridge systemd service
+# (scripts/ha-action-bridge/ha-action-bridge.sh).  Home Assistant triggers
+# them by publishing MQTT messages — NOT via shell_command, because
+# shell_command executes inside the HA container where adb and bluetoothctl
+# are not available.
+#
+# In your automations / scripts, use the action:
+#   action: mqtt.publish
+#   data:
+#     topic: ha/actions/<action>
+#     payload: "<required values — see docs/ARCHITECTURE.md>"
+#
+# Payload schemas:
+#   ha/actions/tv_power        <android-tv-ip>
+#   ha/actions/tv_home         <android-tv-ip>
+#   ha/actions/tv_back         <android-tv-ip>
+#   ha/actions/tv_launch_app   <android-tv-ip> <app.package.id>
+#   ha/actions/bt_connect      <bt-mac-address>
+#   ha/actions/bt_pair_trust   <bt-mac-address> [pin]
+#
+# Example automation action (YAML):
+#   - action: mqtt.publish
+#     data:
+#       topic: ha/actions/tv_power
+#       payload: "{{ states('input_text.android_tv_ip') }}"
+# ---------------------------------------------------------------------------
