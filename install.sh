@@ -87,12 +87,12 @@ install -m 0755 scripts/ha-action-bridge/ha-action-bridge.sh \
 
 # Write environment file with MQTT credentials (not world-readable)
 install -m 0600 /dev/null /etc/ha-action-bridge.env
-cat > /etc/ha-action-bridge.env <<ENV
-MQTT_HOST=127.0.0.1
-MQTT_PORT=1883
-MQTT_USER=${MQTT_USER}
-MQTT_PASS=${MQTT_PASS}
-ENV
+{
+  printf 'MQTT_HOST=127.0.0.1\n'
+  printf 'MQTT_PORT=1883\n'
+  printf 'MQTT_USER=%s\n' "${MQTT_USER}"
+  printf 'MQTT_PASS=%s\n' "${MQTT_PASS}"
+} >> /etc/ha-action-bridge.env
 
 install -m 0644 scripts/ha-action-bridge/ha-action-bridge.service \
   /etc/systemd/system/ha-action-bridge.service
