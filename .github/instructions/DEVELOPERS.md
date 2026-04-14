@@ -1,42 +1,41 @@
 # Developer & Agent Playbook
 
-This file defines workflow expectations for contributors using GitHub tooling.
+Workflow expectations for contributors using GitHub tooling.
 
 ## Separation of concerns
-- `FINALIZATION_CHECKLIST.md` = implementation status map + roadmap + completion evidence.
-- `AGENTS.md` + `.github/instructions/*` = operating instructions + references.
+- `FINALIZATION_CHECKLIST.md` — implementation status, roadmap, decisions, evidence.
+- `AGENTS.md` — operating rules, invariants, official references.
+- `.github/instructions/` — GitHub-native developer guidance (this file).
+
+## Must-read before starting work
+1. `FINALIZATION_CHECKLIST.md` — know what is done, what is pending, what is blocked.
+2. `docs/ARCHITECTURE.md` — understand the action bridge and container model.
+3. `AGENTS.md` — invariants and agent rules.
 
 ## Contribution acceptance criteria
 - Install remains idempotent/re-runnable.
 - Uninstall remains reversible with preserve-by-default behavior.
 - Secrets are never committed.
 - No default WAN exposure is introduced.
-- QA checks pass (`shellcheck`, `docker compose config`).
+- `shell_command` is NOT used for ADB/Bluetooth (broken pattern — see `docs/ARCHITECTURE.md`).
+- QA checks pass: `./scripts/qa.sh` (`shellcheck` + `docker compose config`).
 
-## Reference hierarchy
-1. Official docs (authoritative).
-2. Upstream project repos.
-3. Community examples (patterns only, verify before adopting).
-
-## PR hygiene expectations
+## PR hygiene
 - Keep diffs small, reversible, and explicitly scoped.
 - Explain user-visible behavior changes.
 - Cite official docs for security/runtime-sensitive changes.
-- Update runbook/examples when config behavior changes.
-- Update checklist rows if completion status or roadmap changes.
+- Update `*.example` templates and `docs/` when config behavior changes.
+- Update `FINALIZATION_CHECKLIST.md` if status or roadmap changes.
 
-## Primary docs to cite in PRs
-- Home Assistant install (Linux/Container): https://www.home-assistant.io/installation/linux/
-- Home Assistant common tasks (Container): https://www.home-assistant.io/common-tasks/container/
-- Home Assistant Bluetooth integration: https://www.home-assistant.io/integrations/bluetooth/
-- Home Assistant Android TV (ADB): https://www.home-assistant.io/integrations/androidtv/
-- Docker Engine install (Debian): https://docs.docker.com/engine/install/debian/
-- Compose reference: https://docs.docker.com/reference/compose-file/
-- Zigbee2MQTT Docker guide: https://www.zigbee2mqtt.io/guide/installation/02_docker.html
-- Zigbee2MQTT adapter settings: https://www.zigbee2mqtt.io/guide/configuration/adapter-settings.html
-- Mosquitto authentication methods: https://mosquitto.org/documentation/authentication-methods/
+## Reference hierarchy
+1. Official docs (authoritative — see `SOURCES.md`).
+2. Upstream project repos (implementation patterns only).
+3. Community examples (verify before adopting).
 
-## Verification runbook
-- Non-destructive smoke: `./scripts/smoke/run_release_smoke.sh --mode verify`
-- Full lifecycle smoke (target host): `sudo ./scripts/smoke/run_release_smoke.sh --mode full`
-- Procedure details: `docs/SMOKE_TEST_RUNBOOK.md`
+## Verification
+```bash
+./scripts/qa.sh                                          # shellcheck + compose validate
+./scripts/smoke/run_release_smoke.sh --mode verify       # non-destructive host check
+sudo ./scripts/smoke/run_release_smoke.sh --mode full    # full lifecycle (target host)
+```
+Full procedure: `docs/SMOKE_TEST_RUNBOOK.md`

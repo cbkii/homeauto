@@ -1,0 +1,21 @@
+[Unit]
+Description=Home Assistant Action Bridge (MQTT -> host scripts)
+Documentation=file:///usr/local/share/doc/ha-action-bridge/README.md
+# Start after the network is up and Mosquitto is ready.
+After=network-online.target mosquitto.service
+Wants=mosquitto.service
+
+[Service]
+Type=simple
+# Credentials are written by install.sh from the .env MQTT_USER/MQTT_PASS values.
+EnvironmentFile=/etc/ha-action-bridge.env
+ExecStart=/usr/local/bin/ha-action-bridge.sh
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+# Run as a dedicated restricted user if created; fall back to the installing user.
+# User=ha-bridge
+
+[Install]
+WantedBy=multi-user.target

@@ -70,10 +70,38 @@ apt-get install -y docker.io docker-compose-plugin bluez adb mosquitto-clients
 
 systemctl enable --now docker bluetooth
 
+# ---------------------------------------------------------------------------
+# Helper scripts: installed to host /usr/local/bin/ha-actions (host-only use)
+# NOTE: these scripts are NOT mounted into the HA container.  They are
+# executed on the host by the ha-action-bridge service below.
+# ---------------------------------------------------------------------------
 install -d -m 0755 /usr/local/bin/ha-actions
 cp scripts/bt/*.sh scripts/adb/*.sh /usr/local/bin/ha-actions/
 chmod 0755 /usr/local/bin/ha-actions/*.sh
 
+# ---------------------------------------------------------------------------
+# ha-action-bridge: host-side MQTT subscriber that executes helper scripts
+# ---------------------------------------------------------------------------
+install -m 0755 scripts/ha-action-bridge/ha-action-bridge.sh \
+  /usr/local/bin/ha-action-bridge.sh
+
+# Write environment file with MQTT credentials (not world-readable)
+install -m 0600 /dev/null /etc/ha-action-bridge.env
+{
+  printf 'MQTT_HOST=127.0.0.1\n'
+  printf 'MQTT_PORT=1883\n'
+  printf 'MQTT_USER=%s\n' "${MQTT_USER}"
+  printf 'MQTT_PASS=%s\n' "${MQTT_PASS}"
+} >> /etc/ha-action-bridge.env
+
+install -m 0644 scripts/ha-action-bridge/ha-action-bridge.service \
+  /etc/systemd/system/ha-action-bridge.service
+systemctl daemon-reload
+systemctl enable --now ha-action-bridge
+
+# ---------------------------------------------------------------------------
+# Config directories and example files
+# ---------------------------------------------------------------------------
 install -d -m 0755 ha zigbee2mqtt mosquitto/config mosquitto/data mosquitto/log
 
 if [[ ! -f ha/configuration.yaml ]]; then

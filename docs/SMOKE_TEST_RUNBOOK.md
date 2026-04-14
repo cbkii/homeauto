@@ -1,48 +1,107 @@
-# Smoke Test Runbook (Debian 12 / Raspberry Pi OS Bookworm)
+# Smoke Test Runbook
 
-This runbook provides a reproducible process for closing finalization checklist verification items.
+Reproducible release verification procedure for Debian 12 / Raspberry Pi OS Bookworm.
 
-## Goals
-- Validate install/update/uninstall lifecycle on target runtime.
-- Capture evidence to close `FINALIZATION_CHECKLIST.md` pending rows (S16/S17).
+## Purpose
+Validate the install → run → update → uninstall lifecycle and capture evidence to close
+finalization checklist items S19/S20.
 
 ## Prerequisites
 - Target host: Debian 12 or Raspberry Pi OS Bookworm (64-bit).
-- `.env` configured with a real Zigbee adapter path and credentials.
-- Network access for package/image pulls.
+- `.env` configured with a real Zigbee adapter path and MQTT credentials.
+- Network access for package and image pulls.
 - Optional: Android TV and Bluetooth target devices for helper validation.
 
-## 1) Non-destructive verification (recommended first)
+---
+
+## Step 1 — Non-destructive verify (recommended first)
+
+Run on any host with Docker installed:
+
 ```bash
 ./scripts/smoke/run_release_smoke.sh --mode verify
 ```
 
-Expected result:
-- markdown report generated under `artifacts/`.
-- report includes docker/compose versions, compose validation output, and stack status.
+Expected results:
+- Markdown report generated under `artifacts/smoke-report-<timestamp>.md`.
+- Report includes: system info, Docker version, Compose config validation, stack status.
 
-## 2) Full lifecycle validation (destructive to running stack state)
+---
+
+## Step 2 — Full lifecycle smoke (target host, destructive)
+
+Requires sudo and a configured `.env` with valid device paths:
+
 ```bash
 sudo ./scripts/smoke/run_release_smoke.sh --mode full
 ```
 
-Expected result:
-- install/update/uninstall sequence executed.
-- markdown report generated under `artifacts/`.
+Expected results:
+- `install.sh` succeeds with container stack running.
+- `update.sh --restart` succeeds.
+- `uninstall.sh --yes` removes containers and host-side services.
+- Markdown report generated under `artifacts/`.
 
-## 3) Device checks (manual)
-After install/start:
-- Confirm Zigbee2MQTT can access coordinator and no serial-path mismatch.
-- Confirm ADB helper scripts can execute against a LAN Android TV.
-- Confirm Bluetooth pair/trust/connect scripts work for at least one target device.
+---
 
-## 4) Checklist closure
-- Attach report path/output snippets to `FINALIZATION_CHECKLIST.md` evidence log.
-- Mark S16 as implemented only once lifecycle + runtime checks are complete.
-- Mark S17 done after QA and release evidence are consolidated.
+## Step 3 — Manual device checks
 
+After install:
 
-## Troubleshooting quick notes
-- If `docker compose ps` fails with daemon socket errors, run on a host with a running Docker daemon (nested CI containers often cannot run Docker networking/iptables).
-- If Zigbee checks fail, verify `.env` points to a valid `/dev/serial/by-id/*` path on the target host.
-- If ADB checks fail, confirm the TV allows debugging and the target IP is RFC1918 LAN.
+### Containers
+```bash
+docker compose ps
+# All three services should show "Up"
+```
+
+### ha-action-bridge service
+```bash
+systemctl status ha-action-bridge
+journalctl -fu ha-action-bridge
+```
+
+Test dispatch (substitute real MQTT credentials and TV IP):
+```bash
+mosquitto_pub -h 127.0.0.1 -u <user> -P <pass> \
+  -t ha/actions/tv_power -m "192.168.1.60"
+```
+Expected: bridge log shows `action=tv_power`, `adb` output visible in journal.
+
+### Zigbee coordinator
+```bash
+docker compose logs zigbee2mqtt
+# Look for: "Connected to MQTT server" and serial port open
+```
+
+### ADB helper
+```bash
+ANDROID_TV_IP=192.168.1.60 /usr/local/bin/ha-actions/tv_power.sh
+# Expected: keyevent sent, no LAN-check error
+```
+
+### Bluetooth helper
+```bash
+BT_DEVICE_MAC=AA:BB:CC:DD:EE:FF /usr/local/bin/ha-actions/bt_connect.sh
+# Expected: bluetoothctl connects or reports connection state
+```
+
+---
+
+## Step 4 — Evidence capture and checklist closure
+
+1. Save the smoke report from `artifacts/smoke-report-<timestamp>.md`.
+2. Copy relevant output snippets to `FINALIZATION_CHECKLIST.md` evidence log.
+3. Mark S19 done once full lifecycle + hardware checks pass.
+4. Mark S20 done after QA, CI, and S19 evidence are all consolidated.
+
+---
+
+## Troubleshooting
+
+| Symptom | Likely cause | Fix |
+|---|---|---|
+| `docker compose` fails with socket errors | Docker daemon not running or not accessible | Run on a host with a running Docker daemon |
+| `install.sh` fails on `ZIGBEE_DEVICE` check | Adapter not connected or wrong path | Connect adapter; run `./system/zigbee-discover.sh` |
+| `ha-action-bridge` not dispatching | MQTT credentials mismatch | Check `/etc/ha-action-bridge.env`; re-run `install.sh --no-start` |
+| ADB helper refuses connection | Non-LAN IP or ADB debugging not enabled | Check TV settings; verify IP is RFC1918 |
+| Bluetooth helper fails | BlueZ not running or wrong MAC | `systemctl status bluetooth`; verify MAC address |
