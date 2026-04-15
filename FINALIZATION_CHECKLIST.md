@@ -3,7 +3,7 @@
 Authoritative tracker for implementation status, release readiness, roadmap,
 and completion evidence.
 
-_Last updated: 2026-04-15 (Phase C hardening pass)._
+_Last updated: 2026-04-15 (v1.0.0 release finalization pass)._
 
 ---
 
@@ -35,12 +35,12 @@ _Last updated: 2026-04-15 (Phase C hardening pass)._
 | S22 | Compose | Healthchecks + `depends_on: service_healthy` | ✅ Done | `docker-compose.yml` | Validate on target host |
 | S23 | CI | Artifact upload (QA output + compose config) | ✅ Done | `.github/workflows/ci.yml` | Check workflow artifacts in Actions |
 | S24 | CI | Dependency review workflow | ✅ Done | `.github/workflows/dependency-review.yml` | Review on next PR |
-| S25 | Ops | Backup helper script | ✅ Done | `scripts/stack/backup.sh`, `docs/OPERATIONS.md` | Validate on target |
+| S25 | Ops | Backup helper script | ✅ Done | `scripts/stack/backup.sh` (covers ha/, zigbee2mqtt/, mosquitto/, esphome/, nodered/, mariadb/), `docs/OPERATIONS.md` | Validate on target |
 | S26 | Docs | Support boundaries + version policy | ✅ Done | `docs/SUPPORT_BOUNDARIES.md` | Maintain |
 | S27 | Release | CHANGELOG | ✅ Done | `CHANGELOG.md` | Update on each release |
 | S28 | QA | `qa.sh` portability: replace `rg` with `find` | ✅ Done | `scripts/qa.sh` | — |
 | S29 | Security | Privilege hardening: capabilities alternative documented | ✅ Done | `docker-compose.yml` (comment), `docs/SUPPORT_BOUNDARIES.md` | Hardware validation needed before switching default |
-| S30 | Security | Firewall helper (opt-in) | ✅ Done | `scripts/security/firewall-setup.sh`, `docs/OPERATIONS.md` | Opt-in; no auto-run |
+| S30 | Security | Firewall helper (opt-in) | ✅ Done | `scripts/security/firewall-setup.sh` (covers HA/MQTT/Z2M/ESPHome/Node-RED; MariaDB intentionally localhost-only), `docs/OPERATIONS.md` | Opt-in; no auto-run |
 | S31 | Ops | Scheduled backup + off-site template | ✅ Done | `scripts/stack/backup-schedule-install.sh`, `backup-schedule-remove.sh`, `docs/OPERATIONS.md` | Opt-in; disabled by default |
 | S32 | CI | GitHub Actions SHA pinning | ✅ Done | `.github/workflows/ci.yml`, `.github/workflows/dependency-review.yml` | All three actions pinned to commit SHAs with version comment |
 | S33 | Docs | Service compatibility matrix (HA / Z2M / Mosquitto) | ✅ Done | `docs/SUPPORT_BOUNDARIES.md` | Update when major version bumps occur |
@@ -137,6 +137,7 @@ Legend: ✅ Done, ⏳ Pending, ⚠️ Blocked (reason stated in next-step), ❌ 
 | 2026-04-15 | Release tooling improvement pass: smoke script now supports bridge dispatch evidence (`--bridge-test`) and explicit uninstall mode (`--uninstall-mode preserve|purge`); runbook/operations updated | `scripts/smoke/run_release_smoke.sh`, `docs/SMOKE_TEST_RUNBOOK.md`, `docs/OPERATIONS.md` |
 | 2026-04-15 | Image policy adjustment: Zigbee2MQTT moved from floating `latest` to major-pinned `:2`; support/version policy and compatibility matrix refreshed for 2026 baseline | `docker-compose.yml`, `docs/SUPPORT_BOUNDARIES.md` |
 | 2026-04-15 | Service expansion pass: ESPHome (`:6052`), Node-RED (`:1880`), and MariaDB (`:3306`) added with healthchecks + persistent volumes; HA recorder wired to MariaDB via `recorder_db_url` secret; docs/config references updated | `docker-compose.yml`, `install.sh`, `uninstall.sh`, `ha/configuration.yaml.example`, `ha/secrets.yaml.example`, `README.md`, `docs/ARCHITECTURE.md`, `docs/OPERATIONS.md`, `docs/CONFIG_REFERENCE.md`, `docs/SUPPORT_BOUNDARIES.md` |
+| 2026-04-15 | v1.0.0 finalization pass: `ha/configuration.yaml` updated to match example (recorder stanza added); `backup.sh` extended to cover esphome/, nodered/, mariadb/; `firewall-setup.sh` extended with ESPHome/Node-RED ports and MariaDB exclusion comment; `.env.example` misleading shell_command comment fixed; CHANGELOG cut to [1.0.0]; docs/OPERATIONS.md backup table and firewall section updated | `ha/configuration.yaml`, `scripts/stack/backup.sh`, `scripts/security/firewall-setup.sh`, `.env.example`, `CHANGELOG.md`, `docs/OPERATIONS.md` |
 
 ---
 

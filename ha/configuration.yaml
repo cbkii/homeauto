@@ -5,6 +5,9 @@ mqtt:
   username: !secret mqtt_user
   password: !secret mqtt_password
 
+recorder:
+  db_url: !secret recorder_db_url
+
 # ---------------------------------------------------------------------------
 # Helper actions (ADB / Bluetooth)
 # ---------------------------------------------------------------------------

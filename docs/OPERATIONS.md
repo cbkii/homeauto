@@ -295,6 +295,9 @@ docker compose up -d
 | `ha/` | HA configuration, automations, history DB |
 | `zigbee2mqtt/` | Zigbee2MQTT config and device/coordinator state |
 | `mosquitto/` | MQTT config, password file, persistent session data |
+| `esphome/` | ESPHome project YAML and device configs |
+| `nodered/` | Node-RED flows and settings |
+| `mariadb/` | MariaDB data directory (HA recorder DB and app workloads) |
 | `.env` | Credentials and runtime configuration |
 
 Container images are **not** included — they are re-pulled on restore.
@@ -378,7 +381,8 @@ sudo HOMEAUTO_LAN_CIDR=10.0.0.0/8 ./scripts/security/firewall-setup.sh
 **What the baseline does:**
 - Denies all inbound connections by default.
 - Allows SSH on port 22 (protect this — don't remove it before running).
-- Allows LAN access to HA (8123), MQTT (1883), and Z2M (8080).
+- Allows LAN access to HA (8123), MQTT (1883), Z2M (8080), ESPHome (6052), Node-RED (1880).
+- MariaDB (3306) is intentionally NOT opened to the LAN — only localhost access needed.
 
 **Rollback:**
 ```bash
