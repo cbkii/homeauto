@@ -14,5 +14,19 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y shellcheck docker-compose-plugin
+      - name: Prepare CI environment
+        # qa.sh runs 'docker compose config' which requires env vars from .env.
+        # In CI we use the example file (no real secrets or devices needed for config validation).
+        run: cp .env.example .env
       - name: Run QA checks
-        run: ./scripts/qa.sh
+        run: |
+          mkdir -p artifacts
+          ./scripts/qa.sh 2>&1 | tee artifacts/qa-output.txt
+          docker compose config > artifacts/compose-config.yml 2>&1
+      - name: Upload QA artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qa-artifacts-${{ github.run_id }}
+          path: artifacts/
+          retention-days: 14

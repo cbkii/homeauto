@@ -207,16 +207,49 @@ Available at `http://<host-ip>:8080` after the stack is running.
 
 ---
 
-## Backup recommendations (not automated)
+## Backup and restore
 
-The following directories contain runtime state and should be backed up:
+### Create a backup
+
+```bash
+./scripts/stack/backup.sh
+```
+
+Creates a timestamped archive at `./backups/homeauto-backup-<timestamp>.tar.gz`
+containing `ha/`, `zigbee2mqtt/`, `mosquitto/`, and `.env`.
+
+To write the archive elsewhere:
+
+```bash
+./scripts/stack/backup.sh /path/to/backup-dir
+```
+
+### Restore from a backup
+
+```bash
+tar -xzf backups/homeauto-backup-<timestamp>.tar.gz
+sudo ./install.sh --no-start   # reconcile host state (packages, helper scripts)
+docker compose up -d
+```
+
+### What is backed up
 
 | Path | Contents |
 |---|---|
 | `ha/` | HA configuration, automations, history DB |
 | `zigbee2mqtt/` | Zigbee2MQTT config and device/coordinator state |
-| `mosquitto/data/` | MQTT persistent sessions |
-| `.env` | Credentials and configuration |
+| `mosquitto/` | MQTT config, password file, persistent session data |
+| `.env` | Credentials and runtime configuration |
 
-No backup/restore automation is included in this version.  See
-`FINALIZATION_CHECKLIST.md` Phase C for the backlog item.
+Container images are **not** included — they are re-pulled on restore.
+
+### Off-site and scheduled backups
+
+No automated scheduling or off-site transfer is included in v1.
+For scheduled backups, add a cron job:
+
+```bash
+# Example: daily backup at 02:00, keeping 14 days
+0 2 * * * cd /path/to/homeauto && ./scripts/stack/backup.sh >> /var/log/homeauto-backup.log 2>&1
+find /path/to/homeauto/backups -name 'homeauto-backup-*.tar.gz' -mtime +14 -delete
+```

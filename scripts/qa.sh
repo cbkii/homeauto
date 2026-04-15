@@ -11,7 +11,7 @@ if ! command -v shellcheck >/dev/null 2>&1; then
   exit 1
 fi
 
-mapfile -t shell_files < <(rg --files -g '*.sh')
+mapfile -t shell_files < <(find . -name '*.sh' -not -path '*/.git/*' | sort)
 if [[ ${#shell_files[@]} -eq 0 ]]; then
   echo "No shell scripts found"
   exit 1

@@ -35,10 +35,12 @@ See [docs/OPERATIONS.md](docs/OPERATIONS.md) for the full setup and maintenance 
 | Document | Purpose |
 |---|---|
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | How components fit together, action bridge design |
-| [docs/OPERATIONS.md](docs/OPERATIONS.md) | Install, update, uninstall, day-to-day ops |
+| [docs/OPERATIONS.md](docs/OPERATIONS.md) | Install, update, uninstall, backup, day-to-day ops |
 | [docs/CONFIG_REFERENCE.md](docs/CONFIG_REFERENCE.md) | All configuration files and variables |
 | [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | Common problems and fixes |
+| [docs/SUPPORT_BOUNDARIES.md](docs/SUPPORT_BOUNDARIES.md) | Supported platforms, known limitations, HA Container vs HA OS |
 | [docs/SMOKE_TEST_RUNBOOK.md](docs/SMOKE_TEST_RUNBOOK.md) | Release smoke testing procedure |
+| [CHANGELOG.md](CHANGELOG.md) | Version history |
 | [FINALIZATION_CHECKLIST.md](FINALIZATION_CHECKLIST.md) | Implementation status, roadmap, release readiness |
 
 ## Key design decisions

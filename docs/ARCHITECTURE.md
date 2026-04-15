@@ -171,14 +171,26 @@ ADB helper scripts explicitly reject non-RFC1918 target IPs.
 
 ## Startup order
 
-`zigbee2mqtt` has a `depends_on: mosquitto` relationship so Compose starts
-Mosquitto first.  There is no health-check based ordering; services use their
-own reconnect logic (both Zigbee2MQTT and HA MQTT integration retry
-automatically).
+`zigbee2mqtt` and `homeassistant` both declare `depends_on: mosquitto:
+condition: service_healthy`.  Compose starts Mosquitto first and waits for it
+to pass its healthcheck before starting the dependent services.  This ensures
+MQTT is accepting connections before the services that need it start.
 
-The `ha-action-bridge` systemd service declares `After=mosquitto.service` so
-it starts after the host-managed Mosquitto.  When Mosquitto is Docker-managed,
-the bridge will reconnect automatically on transient failures.
+Healthchecks:
+
+| Service | Check | Start period |
+|---|---|---|
+| `mosquitto` | `mosquitto_pub` authenticated publish to `ha/health` | 10 s |
+| `homeassistant` | `curl` HTTP GET of `:8123/` | 90 s |
+| `zigbee2mqtt` | `wget` HTTP GET of `:8080/` | 60 s |
+
+The Zigbee2MQTT healthcheck will report **unhealthy** if no Zigbee coordinator
+is connected (the frontend does not start without a valid adapter).  This is
+expected and honest — it does not indicate a configuration error in the stack
+itself.
+
+Both HA and Zigbee2MQTT use their own reconnect logic if the MQTT connection is
+briefly interrupted after startup.
 
 ---
 

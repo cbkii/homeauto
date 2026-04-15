@@ -1,0 +1,15 @@
+name: dependency-review
+
+on:
+  pull_request:
+    branches: ["main", "master"]
+
+# Scans dependency changes introduced by a PR for known vulnerabilities.
+# Requires GitHub Advanced Security or is available for free on public repos.
+# See: https://docs.github.com/en/code-security/supply-chain-security/about-dependency-review
+jobs:
+  dependency-review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/dependency-review-action@v4
