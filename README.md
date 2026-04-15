@@ -88,6 +88,11 @@ Full topic/payload schema: [docs/ARCHITECTURE.md § MQTT action topics](docs/ARC
 - ADB scripts enforce RFC1918 LAN-only IP targets.
 - Bluetooth scripts disable discoverable/pairable modes after use.
 - No internet-facing services or port forwarding configured.
+- Optional host firewall baseline: `scripts/security/firewall-setup.sh` (opt-in).
+- Optional scheduled backups: `scripts/stack/backup-schedule-install.sh` (opt-in).
+
+See [docs/SUPPORT_BOUNDARIES.md](docs/SUPPORT_BOUNDARIES.md) for the privilege
+model, service compatibility matrix, and hardening guidance.
 
 ## Quality gates
 

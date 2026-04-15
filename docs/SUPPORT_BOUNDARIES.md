@@ -55,8 +55,43 @@ staying current is preferred over reproducibility.
 
 For a more reproducible setup, pin to specific release tags
 (e.g. `koenkk/zigbee2mqtt:1.42.0`) and update them deliberately.
-Digest pinning (`image@sha256:…`) is not required for this use case and is
-deferred to post-v1 hardening.
+Digest pinning (`image@sha256:…`) is not required for this use case and adds
+maintenance overhead (manual digest updates on each release).
+
+**Recommendation:** use explicit version tags (not `:latest`) if you want
+controlled, deliberate upgrades without running `./update.sh`.
+
+---
+
+## Service compatibility matrix
+
+All three services communicate exclusively via MQTT — no direct code dependency
+exists between them.  Compatibility is therefore loose: any version of HA that
+supports the MQTT autodiscovery protocol is compatible with any version of Z2M
+that publishes in the same format.
+
+| HA version | Mosquitto 2.x | Zigbee2MQTT | Notes |
+|---|---|---|---|
+| 2022.6+ | ✅ | 1.26+ | MQTT entity model stabilised |
+| 2023.x | ✅ | 1.30+ | Device triggers + event entities added |
+| 2024.x | ✅ | 1.36+ | Recommended combination |
+| 2025.x (stable) | ✅ | 1.40+ | Current tracked combination |
+
+**Breaking changes to watch for:**
+- Z2M 1.30 introduced changes to the MQTT autodiscovery topic structure.
+  Always check the [Z2M release notes](https://github.com/Koenkk/zigbee2mqtt/releases)
+  before updating.
+- HA MQTT integration changes are announced in
+  [HA release notes](https://www.home-assistant.io/blog/).
+- Mosquitto 2.x uses auth-required config by default — no breaking changes
+  expected within the 2.x series.
+
+**Update guidance:** run `./update.sh --restart` to pull and apply all updates.
+For major Z2M releases, check migration notes before updating.  Roll back with:
+```bash
+docker compose pull zigbee2mqtt   # pull specific tag if needed
+docker compose up -d zigbee2mqtt
+```
 
 ---
 
@@ -95,9 +130,43 @@ See `docs/OPERATIONS.md § Backup and restore` for the manual procedure.
 
 ### Container privilege
 
-`homeassistant` runs with `privileged: true` to support hardware integrations
-(D-Bus, USB, Bluetooth) in this phase.  Reducing to fine-grained capabilities
-is a post-v1 hardening task listed in `FINALIZATION_CHECKLIST.md` Phase C.
+`homeassistant` runs with `privileged: true` as the default.  This is required
+in the general case for HA Container on a homelab because:
+
+- **Bluetooth** — HA needs D-Bus access and certain kernel capabilities (e.g.
+  `CAP_NET_ADMIN`) to manage Bluetooth sockets.  Even with `/run/dbus` mounted
+  read-only, some HA Bluetooth operations require additional privilege.
+- **USB / hardware integrations** — some HA integrations probe hardware devices
+  (e.g. USB energy meters, custom hardware).  Privilege is the safest default.
+- **Network** — `CAP_NET_ADMIN` and `CAP_NET_RAW` are needed by HA for mDNS /
+  multicast discovery and raw socket operations.
+
+#### Phase C least-privilege alternative (opt-in, experimental)
+
+A capabilities-based alternative is provided as a commented block in
+`docker-compose.yml`.  To try it, replace `privileged: true` with:
+
+```yaml
+privileged: false
+cap_add:
+  - NET_ADMIN
+  - NET_RAW
+  - SYS_RAWIO
+security_opt:
+  - no-new-privileges:true
+```
+
+**Caveats:**
+- Not all HA integrations are guaranteed to work.  In particular, some USB
+  integrations and certain HA core features may silently fail or produce
+  misleading errors without full privilege.
+- Verify that Bluetooth pairing, your Zigbee integration, and any active HA
+  integrations still work after switching.
+- If any integration stops working, restore `privileged: true` and investigate
+  which capability is needed before filing an issue.
+- See `FINALIZATION_CHECKLIST.md` Phase C for validation status.
+
+Rollback: set `privileged: true` and run `docker compose up -d --force-recreate homeassistant`.
 
 ---
 
@@ -110,8 +179,8 @@ The following items are intentionally deferred or excluded:
 - VLAN/mDNS routing automation
 - Automated Zigbee coordinator firmware flashing
 - TLS for MQTT (internal LAN use; out of scope for homelab-stable baseline)
-- Firewall automation (host firewall is the operator's responsibility)
-- Image digest pinning / reproducible builds
+- Firewall automation (opt-in helper: `scripts/security/firewall-setup.sh`; not applied by default)
+- Image digest pinning / reproducible builds (explicit version tags supported; see image policy above)
 - Kubernetes or Swarm orchestration
 - Multi-host or multi-instance HA setups
 
