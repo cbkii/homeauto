@@ -176,6 +176,46 @@ real host with a Docker daemon for full validation.
 
 ---
 
+## MariaDB unhealthy / Home Assistant won't start
+
+Home Assistant depends on MariaDB being healthy before it starts
+(`depends_on: mariadb: condition: service_healthy`).  If MariaDB fails its
+healthcheck, HA will not start.
+
+**Check MariaDB status:**
+```bash
+docker compose ps mariadb
+docker compose logs mariadb
+```
+
+**Common causes:**
+
+- **Wrong credentials** — `MARIADB_ROOT_PASSWORD` in `.env` must match what was
+  used when the `mariadb/` data directory was first initialized.  If you change
+  the password after first start, the container DB already has the old password.
+  To reset: stop the stack, remove `mariadb/`, and restart.
+
+- **Data directory permissions** — if `./mariadb/` was created by root and
+  MariaDB runs as a different UID, the container may fail to initialize.
+  Fix: `sudo chown -R 999:999 mariadb/` (MariaDB container UID is typically 999).
+
+- **Corrupt data directory** — if the container was killed mid-write, the data
+  directory can be left in an inconsistent state.  Restore from a backup or
+  remove `mariadb/` to allow re-initialization.
+
+**Verify healthcheck manually (while stack is running):**
+```bash
+docker exec mariadb mariadb-admin ping -h 127.0.0.1 -u root \
+  -p<MARIADB_ROOT_PASSWORD> --silent
+```
+
+**Temporary workaround** (bypass healthcheck gate while debugging):
+Edit `docker-compose.yml` and change `homeassistant` → `depends_on` →
+`mariadb` → `condition` from `service_healthy` to `service_started`,
+then restore after fixing MariaDB.
+
+---
+
 ## Stack upgrade fails / containers stuck
 
 **Force-recreate all containers:**

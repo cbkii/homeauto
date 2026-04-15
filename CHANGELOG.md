@@ -13,6 +13,25 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 First stable release.
 
+### Fixed
+- **`docker-compose.yml` mosquitto healthcheck**: removed trailing `-q` with no
+  argument. `mosquitto_pub -q` without a QoS value exits 1 with "Error: -q argument
+  given but no QoS specified." — this caused the broker to never pass its healthcheck,
+  which in turn prevented `homeassistant` and `zigbee2mqtt` from ever starting (both
+  declare `depends_on: mosquitto: condition: service_healthy`).  QoS 0 is the default
+  for `mosquitto_pub` and no `-q` flag is needed.
+- **`install.sh`**: added non-blocking warning when
+  `zigbee2mqtt/configuration.yaml` still contains `REPLACE_ME` credentials; the file
+  is tracked in git and install never overwrites it, so operators could silently run
+  with broken Zigbee2MQTT MQTT credentials.
+- **`AGENTS.md`**: removed stale "Backup/restore automation (deferred to Phase C)"
+  from "Not in scope" — backup IS implemented (S25/S31).
+- **`docs/SUPPORT_BOUNDARIES.md`** §Backup: corrected "scheduled runs are out of
+  scope" — the opt-in systemd timer (`backup-schedule-install.sh`) is available.
+- **`docs/TROUBLESHOOTING.md`**: added MariaDB unhealthy troubleshooting section
+  — HA depends on MariaDB being healthy before starting, making MariaDB failures a
+  likely first-run blocker with no prior guidance.
+
 ### Added
 - Stack expansion services:
   - `mariadb:11` for shared SQL storage (HA recorder baseline)

@@ -40,7 +40,6 @@ Agents must optimize for:
 - WAN exposure automation (reverse proxy, port forwarding).
 - VLAN/mDNS routing automation.
 - Automated coordinator firmware flashing.
-- Backup/restore automation (deferred to Phase C).
 
 ---
 
