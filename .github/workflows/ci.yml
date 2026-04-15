@@ -4,16 +4,61 @@ on:
   pull_request:
   push:
     branches: ["main", "master", "work"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   validate:
-    runs-on: ubuntu-latest
+    name: validate (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04]
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
-      - name: Install tools
+      - name: Install shellcheck
         run: |
           sudo apt-get update
-          sudo apt-get install -y shellcheck docker-compose-plugin
+          sudo apt-get install -y shellcheck
+      - name: Ensure Docker Compose is available
+        run: |
+          set -euo pipefail
+
+          # GitHub-hosted runners often include Docker Compose already.
+          if docker compose version >/dev/null 2>&1; then
+            docker --version
+            docker compose version
+            exit 0
+          fi
+
+          # Fallback for runner image changes across Ubuntu releases.
+          sudo apt-get update
+          sudo apt-get install -y docker-compose-plugin \
+            || sudo apt-get install -y docker-compose-v2 \
+            || sudo apt-get install -y docker-compose
+
+          # If only legacy docker-compose is present, expose it as a Docker CLI plugin.
+          if ! docker compose version >/dev/null 2>&1 && command -v docker-compose >/dev/null 2>&1; then
+            sudo mkdir -p /usr/local/lib/docker/cli-plugins
+            sudo ln -sf "$(command -v docker-compose)" /usr/local/lib/docker/cli-plugins/docker-compose
+          fi
+
+          docker --version
+          docker compose version
+      - name: Verify required CLI tools
+        run: |
+          set -euo pipefail
+          shellcheck --version
+          docker --version
+          docker compose version
       - name: Prepare CI environment
         # qa.sh runs 'docker compose config' which requires env vars from .env.
         # In CI we use the example file (no real secrets or devices needed for config validation).
@@ -23,10 +68,12 @@ jobs:
           mkdir -p artifacts
           ./scripts/qa.sh 2>&1 | tee artifacts/qa-output.txt
           docker compose config 2>&1 | tee artifacts/compose-config.yml
+      - name: Run smoke verify (non-destructive)
+        run: ./scripts/smoke/run_release_smoke.sh --mode verify --output "artifacts/smoke-report-${{ matrix.os }}.md"
       - name: Upload QA artifacts
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
         with:
-          name: qa-artifacts-${{ github.run_id }}
+          name: qa-artifacts-${{ github.run_id }}-${{ matrix.os }}
           path: artifacts/
           retention-days: 14
