@@ -108,7 +108,7 @@ Legend: ✅ Done, ⏳ Pending, ⚠️ Blocked (reason stated in next-step), ❌ 
 | `ha-action-bridge` MQTT end-to-end test | ⚠️ Blocked | Requires running MQTT broker + ADB/BT hardware | Test manually after install |
 | HA integration validation (MQTT/BT/Z2M) | ⚠️ Blocked | Requires running HA instance | Validate on target after install |
 | Z2M healthcheck in absence of coordinator | ⚠️ Expected | Z2M won't reach healthy state without a coordinator — healthcheck shows unhealthy | Expected; not a stack bug |
-| Dependency review in CI (private repo) | ⚠️ Conditional | `actions/dependency-review-action` requires GitHub Advanced Security for private repos; free on public repos | If private + no GHAS: workflow step will fail; can be addressed by enabling GHAS or scoping to public visibility |
+| Dependency review in CI (private repo) | ⚠️ Conditional | `actions/dependency-review-action` requires GitHub Advanced Security for private repos; free on public repos | Workflow now skips dependency review on private repositories without failing CI; enable GHAS + Dependency Graph to enforce |
 | Backup scheduling / off-site transfer | ✅ Done | — | `scripts/stack/backup-schedule-install.sh` (opt-in systemd timer); off-site template in `docs/OPERATIONS.md` |
 | Image digest pinning | ⏳ Operator decision | Deferred — explicit version tags supported; digest pinning adds maintenance overhead without proportionate benefit for a homelab | Documented in `docs/SUPPORT_BOUNDARIES.md`; operator can pin to specific tags in `docker-compose.yml` |
 | GitHub Actions SHA pinning | ✅ Done | — | All workflow steps pinned to commit SHAs (S32) |
@@ -130,6 +130,7 @@ Legend: ✅ Done, ⏳ Pending, ⚠️ Blocked (reason stated in next-step), ❌ 
 | 2026-04-15 | QA gate local run: `./scripts/qa.sh` passes — shellcheck clean across all 14 scripts, `docker compose config` validates | local run (ubuntu-latest equivalent, Docker Compose v2.38.2, shellcheck 0.9.0) |
 | 2026-04-15 | Smoke verify local run: `run_release_smoke.sh --mode verify` passes — uname, bash, docker, compose version, compose config, `docker compose ps` all pass | `artifacts/smoke-report-20260415T065027Z.md` (gitignored; captured in CI artifact on merge) |
 | 2026-04-15 | Phase C hardening pass: privilege analysis + capabilities alternative, firewall helper, backup scheduler, GitHub Actions SHA pinning, compatibility matrix | `docker-compose.yml`, `.github/workflows/ci.yml`, `.github/workflows/dependency-review.yml`, `scripts/security/firewall-setup.sh`, `scripts/stack/backup-schedule-install.sh`, `scripts/stack/backup-schedule-remove.sh`, `docs/SUPPORT_BOUNDARIES.md`, `docs/OPERATIONS.md` |
+| 2026-04-15 | Dependency-review workflow hardened for private repos: non-failing skip notice when GHAS support is unavailable; manual dispatch and least-privilege permissions added | `.github/workflows/dependency-review.yml` |
 
 ---
 
