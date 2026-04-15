@@ -245,11 +245,89 @@ Container images are **not** included — they are re-pulled on restore.
 
 ### Off-site and scheduled backups
 
-No automated scheduling or off-site transfer is included in v1.
-For scheduled backups, add a cron job:
+**Scheduled backup via systemd timer (opt-in):**
 
 ```bash
-# Example: daily backup at 02:00, keeping 14 days
-0 2 * * * cd /path/to/homeauto && ./scripts/stack/backup.sh >> /var/log/homeauto-backup.log 2>&1
+# Install the timer (does NOT enable it automatically):
+sudo ./scripts/stack/backup-schedule-install.sh
+
+# Enable and start daily backups:
+sudo systemctl enable --now homeauto-backup.timer
+
+# Check timer status:
+systemctl list-timers homeauto-backup.timer
+
+# View backup logs:
+journalctl -u homeauto-backup.service
+
+# Run a backup immediately:
+sudo systemctl start homeauto-backup.service
+
+# Remove the timer:
+sudo ./scripts/stack/backup-schedule-remove.sh
+```
+
+The timer fires daily at 02:00 local time (±10 min jitter).  Archives are
+written to `./backups/` by default; pass a different path to the install script.
+
+**Off-site transfer template (rsync):**
+
+```bash
+# Example: push today's backup to a remote host after the local backup runs.
+# Add to /etc/systemd/system/homeauto-backup.service ExecStartPost, or run
+# from a separate script/cron:
+rsync -a --remove-source-files \
+  /path/to/homeauto/backups/homeauto-backup-*.tar.gz \
+  user@backup-host:/backups/homeauto/
+```
+
+For encrypted off-site backups, use `rclone` with a remote configured with
+client-side encryption:
+```bash
+rclone copy /path/to/homeauto/backups homeauto-encrypted:backups --min-age 1h
+```
+
+**Credential handling:** off-site credentials (SSH keys, rclone config) must
+not be stored in the repo.  Store them in `~/.ssh/` or `~/.config/rclone/` and
+reference them from the script.  Never commit off-site credentials.
+
+**Retention:** prune old archives to limit disk use:
+```bash
 find /path/to/homeauto/backups -name 'homeauto-backup-*.tar.gz' -mtime +14 -delete
 ```
+
+---
+
+## Host firewall (opt-in)
+
+The stack does not configure a host firewall by default.  An opt-in helper
+script is provided for operators who want a basic ufw baseline.
+
+**This is optional.  Do not run it unless you understand what it does.**
+
+```bash
+# Install ufw if not already present:
+sudo apt-get install -y ufw
+
+# Preview the script before running:
+cat scripts/security/firewall-setup.sh
+
+# Apply the baseline (LAN_CIDR defaults to 192.168.0.0/16):
+sudo ./scripts/security/firewall-setup.sh
+
+# Customise the LAN range:
+sudo HOMEAUTO_LAN_CIDR=10.0.0.0/8 ./scripts/security/firewall-setup.sh
+```
+
+**What the baseline does:**
+- Denies all inbound connections by default.
+- Allows SSH on port 22 (protect this — don't remove it before running).
+- Allows LAN access to HA (8123), MQTT (1883), and Z2M (8080).
+
+**Rollback:**
+```bash
+sudo ufw disable    # disable without removing rules
+sudo ufw reset      # reset all rules and disable
+```
+
+See `scripts/security/firewall-setup.sh` for the full rule set and comments.

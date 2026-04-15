@@ -3,8 +3,21 @@ services:
     image: ghcr.io/home-assistant/home-assistant:stable
     container_name: homeassistant
     network_mode: host
-    # Kept for compatibility per current project direction (can be reduced later).
+    # privileged: true is the recommended default for HA Container to support
+    # hardware integrations (Bluetooth via D-Bus, USB, some HA core features).
+    # See docs/SUPPORT_BOUNDARIES.md §Container privilege for the Phase C
+    # capabilities-based alternative and its known limitations.
     privileged: true
+    # PHASE C ALTERNATIVE — experimental, not default.  Replace privileged: true
+    # with the block below after testing all required integrations on your hardware.
+    # Not all HA integrations are guaranteed to work without full privilege.
+    #   privileged: false
+    #   cap_add:
+    #     - NET_ADMIN    # mDNS / multicast, network management integrations
+    #     - NET_RAW      # raw sockets (some integrations need this)
+    #     - SYS_RAWIO    # raw I/O for some USB/serial integrations
+    #   security_opt:
+    #     - no-new-privileges:true
     environment:
       - TZ=${TZ}
     volumes:

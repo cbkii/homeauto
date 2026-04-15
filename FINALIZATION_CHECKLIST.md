@@ -3,7 +3,7 @@
 Authoritative tracker for implementation status, release readiness, roadmap,
 and completion evidence.
 
-_Last updated: 2026-04-15 (CI hardening + Phase A/B evidence pass)._
+_Last updated: 2026-04-15 (Phase C hardening pass)._
 
 ---
 
@@ -39,6 +39,11 @@ _Last updated: 2026-04-15 (CI hardening + Phase A/B evidence pass)._
 | S26 | Docs | Support boundaries + version policy | ✅ Done | `docs/SUPPORT_BOUNDARIES.md` | Maintain |
 | S27 | Release | CHANGELOG | ✅ Done | `CHANGELOG.md` | Update on each release |
 | S28 | QA | `qa.sh` portability: replace `rg` with `find` | ✅ Done | `scripts/qa.sh` | — |
+| S29 | Security | Privilege hardening: capabilities alternative documented | ✅ Done | `docker-compose.yml` (comment), `docs/SUPPORT_BOUNDARIES.md` | Hardware validation needed before switching default |
+| S30 | Security | Firewall helper (opt-in) | ✅ Done | `scripts/security/firewall-setup.sh`, `docs/OPERATIONS.md` | Opt-in; no auto-run |
+| S31 | Ops | Scheduled backup + off-site template | ✅ Done | `scripts/stack/backup-schedule-install.sh`, `backup-schedule-remove.sh`, `docs/OPERATIONS.md` | Opt-in; disabled by default |
+| S32 | CI | GitHub Actions SHA pinning | ✅ Done | `.github/workflows/ci.yml`, `.github/workflows/dependency-review.yml` | All three actions pinned to commit SHAs with version comment |
+| S33 | Docs | Service compatibility matrix (HA / Z2M / Mosquitto) | ✅ Done | `docs/SUPPORT_BOUNDARIES.md` | Update when major version bumps occur |
 
 Legend: ✅ Done, ⏳ Pending, ⚠️ Blocked (reason stated in next-step), ❌ Not started.
 
@@ -68,13 +73,14 @@ Legend: ✅ Done, ⏳ Pending, ⚠️ Blocked (reason stated in next-step), ❌ 
 - [ ] Capture `ha-action-bridge` end-to-end dispatch evidence.
 - [ ] Close S19/S20 with evidence references.
 
-### Phase C — Post-v1 hardening backlog (deferred)
-- [ ] Evaluate replacing `privileged: true` with fine-grained capabilities.
-- [ ] Optional firewall helper tooling (opt-in by policy).
-- [ ] Evaluate scheduled/off-site backup automation.
-- [ ] Evaluate image version pinning to specific release tags or digests.
-- [ ] Evaluate pinning GitHub Actions to SHA digests for stronger supply-chain security.
-- [ ] Consider HA/Z2M version compatibility matrix.
+### Phase C — Post-v1 hardening backlog
+
+- [x] Evaluate replacing `privileged: true` with fine-grained capabilities — documented analysis + commented alternative in `docker-compose.yml`; default kept as `privileged: true` pending hardware validation (see `docs/SUPPORT_BOUNDARIES.md §Container privilege`).
+- [x] Optional firewall helper tooling — `scripts/security/firewall-setup.sh` added (opt-in, ufw-based, LAN-only baseline); documented in `docs/OPERATIONS.md`.
+- [x] Scheduled backup automation — `scripts/stack/backup-schedule-install.sh` + `backup-schedule-remove.sh` added (opt-in systemd timer); off-site transfer template documented in `docs/OPERATIONS.md`.
+- [x] Supply-chain hardening — GitHub Actions workflow steps pinned to commit SHAs (`actions/checkout@v4.2.2`, `upload-artifact@v4.6.2`, `dependency-review-action@v4.7.1`); image tag policy documented in `docs/SUPPORT_BOUNDARIES.md`.
+- [x] HA/Z2M/Mosquitto compatibility matrix — added to `docs/SUPPORT_BOUNDARIES.md`.
+- [ ] Evaluate image version pinning to specific release tags or digests (documented in `docs/SUPPORT_BOUNDARIES.md`; operator decision, not enforced by default).
 
 ---
 
@@ -103,9 +109,9 @@ Legend: ✅ Done, ⏳ Pending, ⚠️ Blocked (reason stated in next-step), ❌ 
 | HA integration validation (MQTT/BT/Z2M) | ⚠️ Blocked | Requires running HA instance | Validate on target after install |
 | Z2M healthcheck in absence of coordinator | ⚠️ Expected | Z2M won't reach healthy state without a coordinator — healthcheck shows unhealthy | Expected; not a stack bug |
 | Dependency review in CI (private repo) | ⚠️ Conditional | `actions/dependency-review-action` requires GitHub Advanced Security for private repos; free on public repos | If private + no GHAS: workflow step will fail; can be addressed by enabling GHAS or scoping to public visibility |
-| Backup scheduling / off-site transfer | ❌ Not started | Deferred to Phase C | `scripts/stack/backup.sh` covers local tar backup |
-| Image digest pinning | ❌ Not started | Deferred to Phase C — tracks stable/latest tags by design | Documented in `docs/SUPPORT_BOUNDARIES.md` |
-| GitHub Actions SHA pinning | ❌ Not started | Deferred to Phase C | Workflows use `@v4` tag refs; SHA pinning improves supply-chain posture |
+| Backup scheduling / off-site transfer | ✅ Done | — | `scripts/stack/backup-schedule-install.sh` (opt-in systemd timer); off-site template in `docs/OPERATIONS.md` |
+| Image digest pinning | ⏳ Operator decision | Deferred — explicit version tags supported; digest pinning adds maintenance overhead without proportionate benefit for a homelab | Documented in `docs/SUPPORT_BOUNDARIES.md`; operator can pin to specific tags in `docker-compose.yml` |
+| GitHub Actions SHA pinning | ✅ Done | — | All workflow steps pinned to commit SHAs (S32) |
 
 ---
 
@@ -123,6 +129,7 @@ Legend: ✅ Done, ⏳ Pending, ⚠️ Blocked (reason stated in next-step), ❌ 
 | 2026-04-15 | CI workflow analysis: no actionable failures found; `docker compose config` output changed to `tee` pattern so errors appear in step log | `.github/workflows/ci.yml` |
 | 2026-04-15 | QA gate local run: `./scripts/qa.sh` passes — shellcheck clean across all 14 scripts, `docker compose config` validates | local run (ubuntu-latest equivalent, Docker Compose v2.38.2, shellcheck 0.9.0) |
 | 2026-04-15 | Smoke verify local run: `run_release_smoke.sh --mode verify` passes — uname, bash, docker, compose version, compose config, `docker compose ps` all pass | `artifacts/smoke-report-20260415T065027Z.md` (gitignored; captured in CI artifact on merge) |
+| 2026-04-15 | Phase C hardening pass: privilege analysis + capabilities alternative, firewall helper, backup scheduler, GitHub Actions SHA pinning, compatibility matrix | `docker-compose.yml`, `.github/workflows/ci.yml`, `.github/workflows/dependency-review.yml`, `scripts/security/firewall-setup.sh`, `scripts/stack/backup-schedule-install.sh`, `scripts/stack/backup-schedule-remove.sh`, `docs/SUPPORT_BOUNDARIES.md`, `docs/OPERATIONS.md` |
 
 ---
 
