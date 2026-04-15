@@ -3,7 +3,7 @@
 Authoritative tracker for implementation status, release readiness, roadmap,
 and completion evidence.
 
-_Last updated: 2026-04-14 (release-readiness pass)._
+_Last updated: 2026-04-15 (CI hardening + Phase A/B evidence pass)._
 
 ---
 
@@ -23,7 +23,7 @@ _Last updated: 2026-04-14 (release-readiness pass)._
 | S10 | ADB | LAN-only helper controls (power/home/back/launch) | ✅ Done | `scripts/adb/` | On-device behavioral smoke |
 | S11 | Bluetooth | Connect + pair/trust helper workflow | ✅ Done | `scripts/bt/` | Validate against real adapter |
 | S12 | QA | Shell + compose QA script | ✅ Done | `scripts/qa.sh` | — |
-| S13 | CI | GitHub Actions QA workflow | ✅ Done | `.github/workflows/ci.yml` | Confirm green run |
+| S13 | CI | GitHub Actions QA workflow | ✅ Done | `.github/workflows/ci.yml` | Locally verified clean 2026-04-15; compose config output now via `tee` for log visibility |
 | S14 | Docs | Operator/developer documentation | ✅ Done | `README.md`, `docs/` | Maintain with behavior changes |
 | S15 | Agent enablement | AGENTS + GitHub instruction corpus | ✅ Done | `AGENTS.md`, `.github/copilot-instructions.md`, `.github/instructions/` | Keep in sync |
 | **S16** | **Action bridge** | **Fix broken shell_command: host-side MQTT action bridge** | ✅ Done | `scripts/ha-action-bridge/`, `install.sh`, `uninstall.sh`, `ha/configuration.yaml` | Runtime smoke evidence |
@@ -63,7 +63,7 @@ Legend: ✅ Done, ⏳ Pending, ⚠️ Blocked (reason stated in next-step), ❌ 
 - [x] Backup helper script added (`scripts/stack/backup.sh`).
 - [x] Support boundaries and version policy documented.
 - [x] CHANGELOG started.
-- [ ] Capture QA evidence (`./scripts/qa.sh` output + CI run link).
+- [x] Capture QA evidence (`./scripts/qa.sh` output + smoke verify report; see Section 5, 2026-04-15 entries).
 - [ ] Capture install/update/uninstall evidence (commands + outputs).
 - [ ] Capture `ha-action-bridge` end-to-end dispatch evidence.
 - [ ] Close S19/S20 with evidence references.
@@ -102,6 +102,7 @@ Legend: ✅ Done, ⏳ Pending, ⚠️ Blocked (reason stated in next-step), ❌ 
 | `ha-action-bridge` MQTT end-to-end test | ⚠️ Blocked | Requires running MQTT broker + ADB/BT hardware | Test manually after install |
 | HA integration validation (MQTT/BT/Z2M) | ⚠️ Blocked | Requires running HA instance | Validate on target after install |
 | Z2M healthcheck in absence of coordinator | ⚠️ Expected | Z2M won't reach healthy state without a coordinator — healthcheck shows unhealthy | Expected; not a stack bug |
+| Dependency review in CI (private repo) | ⚠️ Conditional | `actions/dependency-review-action` requires GitHub Advanced Security for private repos; free on public repos | If private + no GHAS: workflow step will fail; can be addressed by enabling GHAS or scoping to public visibility |
 | Backup scheduling / off-site transfer | ❌ Not started | Deferred to Phase C | `scripts/stack/backup.sh` covers local tar backup |
 | Image digest pinning | ❌ Not started | Deferred to Phase C — tracks stable/latest tags by design | Documented in `docs/SUPPORT_BOUNDARIES.md` |
 | GitHub Actions SHA pinning | ❌ Not started | Deferred to Phase C | Workflows use `@v4` tag refs; SHA pinning improves supply-chain posture |
@@ -119,6 +120,9 @@ Legend: ✅ Done, ⏳ Pending, ⚠️ Blocked (reason stated in next-step), ❌ 
 | 2026-04-14 | **Fix broken shell_command**: MQTT action bridge implemented | `scripts/ha-action-bridge/`, updated `install.sh`/`uninstall.sh`/`ha/configuration.yaml` |
 | 2026-04-14 | Architecture + operations + troubleshooting + config reference docs added | `docs/ARCHITECTURE.md`, `docs/OPERATIONS.md`, `docs/TROUBLESHOOTING.md`, `docs/CONFIG_REFERENCE.md` |
 | 2026-04-14 | Release-readiness pass: healthchecks, CI artifacts, dependency review, backup helper, support boundaries, CHANGELOG, QA portability fix | `docker-compose.yml`, `.github/workflows/ci.yml`, `.github/workflows/dependency-review.yml`, `scripts/stack/backup.sh`, `docs/SUPPORT_BOUNDARIES.md`, `CHANGELOG.md`, `scripts/qa.sh` |
+| 2026-04-15 | CI workflow analysis: no actionable failures found; `docker compose config` output changed to `tee` pattern so errors appear in step log | `.github/workflows/ci.yml` |
+| 2026-04-15 | QA gate local run: `./scripts/qa.sh` passes — shellcheck clean across all 14 scripts, `docker compose config` validates | local run (ubuntu-latest equivalent, Docker Compose v2.38.2, shellcheck 0.9.0) |
+| 2026-04-15 | Smoke verify local run: `run_release_smoke.sh --mode verify` passes — uname, bash, docker, compose version, compose config, `docker compose ps` all pass | `artifacts/smoke-report-20260415T065027Z.md` (gitignored; captured in CI artifact on merge) |
 
 ---
 

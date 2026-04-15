@@ -18,7 +18,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - CI: copy `.env.example` to `.env` before QA so `docker compose config`
   succeeds without real secrets.
 - CI: upload QA output and resolved Compose config as workflow artifacts.
-- `.github/workflows/dependency-review.yml` — dependency review on PRs.
+- `.github/workflows/dependency-review.yml` — dependency review on PRs (requires
+  GHAS on private repos; free on public).
 
 ### Changed
 - `scripts/qa.sh`: replaced `rg --files` with `find` — removes ripgrep
@@ -28,6 +29,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   the `mosquitto` service for the healthcheck.
 - `FINALIZATION_CHECKLIST.md`: added new items S22–S27, updated Phase C/B
   roadmap rows, extended evidence log.
+- CI: `docker compose config` output now routed through `tee` so errors are
+  visible directly in the GitHub Actions step log in addition to the artifact.
+- `FINALIZATION_CHECKLIST.md` Phase B: "Capture QA evidence" marked done
+  (QA gate and smoke verify confirmed locally 2026-04-15).
 
 ---
 

@@ -22,7 +22,7 @@ jobs:
         run: |
           mkdir -p artifacts
           ./scripts/qa.sh 2>&1 | tee artifacts/qa-output.txt
-          docker compose config > artifacts/compose-config.yml 2>&1
+          docker compose config 2>&1 | tee artifacts/compose-config.yml
       - name: Upload QA artifacts
         if: always()
         uses: actions/upload-artifact@v4
