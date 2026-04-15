@@ -8,6 +8,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- Stack expansion services:
+  - `mariadb:11` for shared SQL storage (HA recorder baseline)
+  - `ghcr.io/esphome/esphome:stable` dashboard service
+  - `nodered/node-red:4` flow automation service
+- `ha/configuration.yaml.example`: `recorder.db_url` secret wiring for MariaDB.
+- `ha/secrets.yaml.example`: `recorder_db_url` placeholder.
+- CI guardrail: required MariaDB keys are validated in `.env.example`.
 - Phase C hardening: `scripts/security/firewall-setup.sh` — opt-in ufw host
   firewall baseline (LAN-only allow-list for HA/MQTT/Z2M ports; SSH always
   allowed; not run automatically).
@@ -41,9 +48,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   GHAS on private repos; free on public).
 - `scripts/qa.sh`: replaced `rg --files` with `find` — removes ripgrep
   dependency, improves portability.
-- `docker-compose.yml`: `koenkk/zigbee2mqtt` now uses the explicit `:latest`
-  tag instead of an implicit latest; MQTT credentials passed as env vars to
-  the `mosquitto` service for the healthcheck.
+- `docker-compose.yml`: `koenkk/zigbee2mqtt` is major-pinned to `:2` (not
+  floating `:latest`); MQTT credentials passed as env vars to the `mosquitto`
+  service for the healthcheck.
 - `FINALIZATION_CHECKLIST.md`: items S29–S33 added; Phase C backlog rows updated;
   evidence log extended.
 - CI: `docker compose config` output now routed through `tee` so errors are

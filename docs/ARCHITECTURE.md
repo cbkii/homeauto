@@ -35,7 +35,11 @@ This document describes how the components of the homeauto stack fit together at
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
-All three Docker containers use `network_mode: host` so they share the host's
+> The overview diagram is simplified around the MQTT/action-bridge path.
+> Additional compose services in this stack (`mariadb`, `esphome`, `nodered`)
+> are documented in the service sections below.
+
+All Docker containers use `network_mode: host` so they share the host's
 network stack.  This is required for mDNS/multicast discovery (Zeroconf, SSDP)
 and keeps the routing topology simple for a home LAN.
 
@@ -53,6 +57,7 @@ and keeps the routing topology simple for a home LAN.
 | Config | `./ha/` mounted at `/config` |
 | Privileges | `privileged: true` (current phase; required for some integrations) |
 | D-Bus | `/run/dbus` mounted read-only (Bluetooth integration) |
+| Recorder DB | MariaDB (`127.0.0.1:3306`) via `recorder.db_url` secret |
 
 The HA container runs **Home Assistant Container** — not HA OS, not Supervisor.
 Add-on store and Supervisor features are not available.
@@ -70,11 +75,49 @@ Add-on store and Supervisor features are not available.
 Mosquitto is the central message bus.  All MQTT consumers (HA, Zigbee2MQTT,
 ha-action-bridge) authenticate with the credentials set in `.env`.
 
+### mariadb
+
+| Property | Value |
+|---|---|
+| Image | `mariadb:11` |
+| Network | host |
+| Port | 3306 |
+| Data | `./mariadb/` mounted at `/var/lib/mysql` |
+| Purpose | Shared relational DB for HA recorder and optional app workloads |
+
+MariaDB is the default SQL backend in this stack to avoid running multiple
+relational databases.  Home Assistant recorder connects to this DB via
+`recorder.db_url` in `ha/secrets.yaml`.
+
+### esphome
+
+| Property | Value |
+|---|---|
+| Image | `ghcr.io/esphome/esphome:stable` |
+| Network | host |
+| Port | 6052 (dashboard) |
+| Config | `./esphome/` mounted at `/config` |
+
+ESPHome dashboard manages YAML firmware projects and OTA updates for ESP
+devices that are then discoverable by Home Assistant.
+
+### nodered
+
+| Property | Value |
+|---|---|
+| Image | `nodered/node-red:4` |
+| Network | host |
+| Port | 1880 |
+| Data | `./nodered/` mounted at `/data` |
+
+Node-RED can subscribe/publish MQTT messages, call Home Assistant APIs, and
+optionally use MariaDB-backed nodes/workflows for persistent automation state.
+
 ### zigbee2mqtt
 
 | Property | Value |
 |---|---|
-| Image | `koenkk/zigbee2mqtt` |
+| Image | `koenkk/zigbee2mqtt:2` |
 | Network | host |
 | Port | 8080 (web frontend) |
 | Config | `./zigbee2mqtt/` mounted at `/app/data` |
@@ -171,17 +214,23 @@ ADB helper scripts explicitly reject non-RFC1918 target IPs.
 
 ## Startup order
 
-`zigbee2mqtt` and `homeassistant` both declare `depends_on: mosquitto:
+`zigbee2mqtt` and `homeassistant` declare `depends_on: mosquitto:
 condition: service_healthy`.  Compose starts Mosquitto first and waits for it
 to pass its healthcheck before starting the dependent services.  This ensures
 MQTT is accepting connections before the services that need it start.
+
+`homeassistant` also depends on `mariadb: service_healthy` so recorder
+initialization waits for SQL availability.
 
 Healthchecks:
 
 | Service | Check | Start period |
 |---|---|---|
+| `mariadb` | `mariadb-admin ping` authenticated local ping | 30 s |
 | `mosquitto` | `mosquitto_pub` authenticated publish to `ha/health` | 10 s |
 | `homeassistant` | `curl` HTTP GET of `:8123/` | 90 s |
+| `esphome` | `curl` HTTP GET of `:6052/` | 60 s |
+| `nodered` | `curl` HTTP GET of `:1880/` | 45 s |
 | `zigbee2mqtt` | `wget` HTTP GET of `:8080/` | 60 s |
 
 The Zigbee2MQTT healthcheck will report **unhealthy** if no Zigbee coordinator

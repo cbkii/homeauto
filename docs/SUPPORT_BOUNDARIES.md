@@ -46,15 +46,18 @@ https://www.home-assistant.io/installation/linux/#install-home-assistant-contain
 |---|---|---|
 | Home Assistant | `ghcr.io/home-assistant/home-assistant:stable` | Tracks current stable release |
 | Mosquitto | `eclipse-mosquitto:2` | Tracks latest Mosquitto 2.x |
-| Zigbee2MQTT | `koenkk/zigbee2mqtt:latest` | Tracks latest Z2M release |
+| Zigbee2MQTT | `koenkk/zigbee2mqtt:2` | Tracks Z2M 2.x series (major-pinned) |
+| ESPHome | `ghcr.io/esphome/esphome:stable` | Tracks current stable release |
+| Node-RED | `nodered/node-red:4` | Tracks Node-RED v4 major line |
+| MariaDB | `mariadb:11` | Tracks MariaDB 11.x major line |
 
 **Version pinning policy:**
-The stack currently tracks `stable` / `2` / `latest` tags, which are re-pulled
-on every `./update.sh --restart` run.  This is appropriate for a homelab where
-staying current is preferred over reproducibility.
+The stack currently tracks `stable` / `2` / `2` major tags, which are re-pulled
+on every `./update.sh --restart` run. This balances homelab currency with
+reduced surprise from unconstrained `latest` pulls.
 
 For a more reproducible setup, pin to specific release tags
-(e.g. `koenkk/zigbee2mqtt:1.42.0`) and update them deliberately.
+(e.g. `koenkk/zigbee2mqtt:2.9.2`) and update them deliberately.
 Digest pinning (`image@sha256:…`) is not required for this use case and adds
 maintenance overhead (manual digest updates on each release).
 
@@ -65,20 +68,25 @@ controlled, deliberate upgrades without running `./update.sh`.
 
 ## Service compatibility matrix
 
-All three services communicate exclusively via MQTT — no direct code dependency
-exists between them.  Compatibility is therefore loose: any version of HA that
-supports the MQTT autodiscovery protocol is compatible with any version of Z2M
-that publishes in the same format.
+Core automation services (HA, Mosquitto, Zigbee2MQTT) communicate via MQTT.
+Additional services are independent:
+- MariaDB is used by HA recorder (`recorder.db_url`)
+- ESPHome exposes a dashboard/API service for firmware management
+- Node-RED integrates with HA/MQTT via flows
+
+Compatibility is therefore mostly loose at the message bus level (MQTT), with
+MariaDB compatibility governed by HA recorder SQL backend support.
 
 | HA version | Mosquitto 2.x | Zigbee2MQTT | Notes |
 |---|---|---|---|
 | 2022.6+ | ✅ | 1.26+ | MQTT entity model stabilised |
 | 2023.x | ✅ | 1.30+ | Device triggers + event entities added |
 | 2024.x | ✅ | 1.36+ | Recommended combination |
-| 2025.x (stable) | ✅ | 1.40+ | Current tracked combination |
+| 2025.x (stable) | ✅ | 2.0+ | Supported (legacy stable line) |
+| 2026.x (stable) | ✅ | 2.8+ | Current tracked combination |
 
 **Breaking changes to watch for:**
-- Z2M 1.30 introduced changes to the MQTT autodiscovery topic structure.
+- Z2M 2.x introduced configuration and migration changes from late 1.x lines.
   Always check the [Z2M release notes](https://github.com/Koenkk/zigbee2mqtt/releases)
   before updating.
 - HA MQTT integration changes are announced in

@@ -30,6 +30,10 @@ Required variables:
 | `ZIGBEE_DEVICE` | Stable coordinator path under `/dev/serial/by-id/` |
 | `MQTT_USER` | MQTT broker username |
 | `MQTT_PASS` | MQTT broker password (choose a strong value) |
+| `MARIADB_ROOT_PASSWORD` | Root password for MariaDB container |
+| `MARIADB_DATABASE` | Shared application database name (default `homeauto`) |
+| `MARIADB_USER` | Non-root application DB user |
+| `MARIADB_PASSWORD` | Password for `MARIADB_USER` |
 
 Optional variables (used as defaults by helper scripts):
 
@@ -47,7 +51,7 @@ Optional variables (used as defaults by helper scripts):
 
 Copy the output path into `.env` as `ZIGBEE_DEVICE`.
 
-### 3. Update Zigbee2MQTT credentials
+### 3. Update Zigbee2MQTT + Home Assistant DB credentials
 
 Edit `zigbee2mqtt/configuration.yaml.example` before first install (or edit
 `zigbee2mqtt/configuration.yaml` after install) to set:
@@ -59,6 +63,13 @@ mqtt:
 ```
 
 These must match the values in `.env`.
+
+Edit `ha/secrets.yaml.example` (before first install) or `ha/secrets.yaml`
+(after install) so `recorder_db_url` matches the MariaDB values from `.env`:
+
+```yaml
+recorder_db_url: mysql://<MARIADB_USER>:<MARIADB_PASSWORD>@127.0.0.1:3306/<MARIADB_DATABASE>?charset=utf8mb4
+```
 
 ### 4. Install the stack
 
@@ -76,6 +87,10 @@ This will:
 - Start the Docker Compose stack
 
 After install, Home Assistant is available at `http://<host-ip>:8123`.
+Additional UIs:
+- Zigbee2MQTT: `http://<host-ip>:8080`
+- ESPHome: `http://<host-ip>:6052`
+- Node-RED: `http://<host-ip>:1880`
 
 ---
 
@@ -133,7 +148,8 @@ Uninstall removes:
 - `/usr/local/bin/ha-actions/` and `/usr/local/bin/ha-action-bridge.sh`
 - `/etc/ha-action-bridge.env`
 
-With `--purge-data` also removes: `ha/`, `zigbee2mqtt/`, `mosquitto/`.
+With `--purge-data` also removes: `ha/`, `zigbee2mqtt/`, `esphome/`, `nodered/`,
+`mariadb/`, `mosquitto/`.
 
 ---
 
@@ -149,6 +165,9 @@ docker compose logs -f     # tail logs (all services)
 docker compose logs -f homeassistant   # HA logs only
 docker compose logs -f mosquitto
 docker compose logs -f zigbee2mqtt
+docker compose logs -f esphome
+docker compose logs -f nodered
+docker compose logs -f mariadb
 ```
 
 ### ha-action-bridge service
@@ -158,6 +177,35 @@ systemctl status ha-action-bridge
 journalctl -fu ha-action-bridge   # follow logs
 systemctl restart ha-action-bridge
 ```
+
+---
+
+## Release smoke verification
+
+Non-destructive verification:
+
+```bash
+./scripts/smoke/run_release_smoke.sh --mode verify
+```
+
+Full lifecycle on a target host:
+
+```bash
+sudo ./scripts/smoke/run_release_smoke.sh --mode full
+```
+
+Capture bridge dispatch evidence and purge data at end:
+
+```bash
+sudo ./scripts/smoke/run_release_smoke.sh \
+  --mode full \
+  --bridge-test \
+  --bridge-payload "192.168.1.60" \
+  --uninstall-mode purge
+```
+
+The script writes a markdown report to `./artifacts/` by default.
+See `docs/SMOKE_TEST_RUNBOOK.md` for the release sign-off checklist.
 
 ---
 
@@ -204,6 +252,14 @@ action:
 ## Zigbee2MQTT frontend
 
 Available at `http://<host-ip>:8080` after the stack is running.
+
+## ESPHome dashboard
+
+Available at `http://<host-ip>:6052` after the stack is running.
+
+## Node-RED editor
+
+Available at `http://<host-ip>:1880` after the stack is running.
 
 ---
 

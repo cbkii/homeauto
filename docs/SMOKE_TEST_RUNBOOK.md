@@ -25,6 +25,8 @@ Run on any host with Docker installed:
 Expected results:
 - Markdown report generated under `artifacts/smoke-report-<timestamp>.md`.
 - Report includes: system info, Docker version, Compose config validation, stack status.
+- If `.env` is absent, verify mode automatically uses `.env.example` and records
+  a warning in the report.
 
 ---
 
@@ -36,11 +38,25 @@ Requires sudo and a configured `.env` with valid device paths:
 sudo ./scripts/smoke/run_release_smoke.sh --mode full
 ```
 
+Optional stricter cleanup:
+```bash
+sudo ./scripts/smoke/run_release_smoke.sh --mode full --uninstall-mode purge
+```
+
+Optional bridge dispatch evidence capture:
+```bash
+sudo ./scripts/smoke/run_release_smoke.sh \
+  --mode full \
+  --bridge-test \
+  --bridge-payload "192.168.1.60"
+```
+
 Expected results:
 - `install.sh` succeeds with container stack running.
 - `update.sh --restart` succeeds.
 - `uninstall.sh --yes` removes containers and host-side services.
 - Markdown report generated under `artifacts/`.
+- With `--bridge-test`, report includes `ha-action-bridge` journal output.
 
 ---
 
@@ -51,7 +67,8 @@ After install:
 ### Containers
 ```bash
 docker compose ps
-# All three services should show "Up"
+# Core services should show "Up":
+# homeassistant, mosquitto, zigbee2mqtt, esphome, nodered, mariadb
 ```
 
 ### ha-action-bridge service
@@ -93,6 +110,13 @@ BT_DEVICE_MAC=AA:BB:CC:DD:EE:FF /usr/local/bin/ha-actions/bt_connect.sh
 2. Copy relevant output snippets to `FINALIZATION_CHECKLIST.md` evidence log.
 3. Mark S19 done once full lifecycle + hardware checks pass.
 4. Mark S20 done after QA, CI, and S19 evidence are all consolidated.
+
+Suggested evidence checklist:
+- smoke report path and timestamp
+- install/update/uninstall command blocks showing `[PASS]`
+- `docker compose ps` output while stack is running
+- `ha-action-bridge` dispatch log lines (if `--bridge-test` was used)
+- notes on any expected warnings (for example: no coordinator connected)
 
 ---
 
