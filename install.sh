@@ -50,7 +50,16 @@ fi
 # shellcheck disable=SC1091
 source .env
 
-required_vars=(TZ ZIGBEE_DEVICE MQTT_USER MQTT_PASS)
+required_vars=(
+  TZ
+  ZIGBEE_DEVICE
+  MQTT_USER
+  MQTT_PASS
+  MARIADB_ROOT_PASSWORD
+  MARIADB_DATABASE
+  MARIADB_USER
+  MARIADB_PASSWORD
+)
 for v in "${required_vars[@]}"; do
   if [[ -z "${!v:-}" ]]; then
     echo "Missing required variable in .env: $v"
@@ -102,7 +111,15 @@ systemctl enable --now ha-action-bridge
 # ---------------------------------------------------------------------------
 # Config directories and example files
 # ---------------------------------------------------------------------------
-install -d -m 0755 ha zigbee2mqtt mosquitto/config mosquitto/data mosquitto/log
+install -d -m 0755 \
+  ha \
+  zigbee2mqtt \
+  esphome \
+  nodered \
+  mariadb \
+  mosquitto/config \
+  mosquitto/data \
+  mosquitto/log
 
 if [[ ! -f ha/configuration.yaml ]]; then
   cp ha/configuration.yaml.example ha/configuration.yaml

@@ -7,7 +7,7 @@ Usage: sudo ./uninstall.sh [options]
 
 Options:
   --yes         Do not prompt for confirmation
-  --purge-data  Remove ha/, zigbee2mqtt/, mosquitto/ data directories
+  --purge-data  Remove ha/, zigbee2mqtt/, esphome/, nodered/, mariadb/, mosquitto/ data directories
   -h, --help    Show this help
 USAGE
 }
@@ -59,7 +59,7 @@ rm -rf /usr/local/bin/ha-actions
 rm -f /etc/ha-action-bridge.env
 
 if [[ $PURGE_DATA -eq 1 ]]; then
-  rm -rf ha zigbee2mqtt mosquitto
+  rm -rf ha zigbee2mqtt esphome nodered mariadb mosquitto
   echo "Containers removed. Data purged."
 else
   echo "Containers removed. Data preserved (pass --purge-data to remove)."

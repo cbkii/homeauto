@@ -10,6 +10,9 @@ Managed with Docker Compose.
 | Home Assistant | Smart home controller | 8123 |
 | Mosquitto | MQTT broker (auth required) | 1883 |
 | Zigbee2MQTT | Zigbee coordinator bridge + UI | 8080 |
+| ESPHome | ESP device dashboard + OTA workflows | 6052 |
+| Node-RED | Flow-based automation engine | 1880 |
+| MariaDB | Shared relational database (HA recorder + app workloads) | 3306 |
 
 **Host services (systemd):**
 - `ha-action-bridge` — host-side MQTT subscriber that executes ADB and Bluetooth helper scripts on behalf of Home Assistant
@@ -55,6 +58,10 @@ See [docs/OPERATIONS.md](docs/OPERATIONS.md) for the full setup and maintenance 
 - **No WAN exposure** — no reverse proxy or port-forwarding automation included.
 - **Stable Zigbee path** — coordinator mapped via `/dev/serial/by-id/…` to
   avoid symlink churn.
+- **Conservative image tracking** — Home Assistant `stable`, Mosquitto `2.x`,
+  Zigbee2MQTT `2.x` (major-pinned, not floating `latest`).
+- **Single shared DB baseline** — MariaDB is included for Home Assistant
+  recorder and optional app workloads to avoid multiple SQL backends.
 
 ## Prerequisites
 
@@ -105,4 +112,3 @@ Runs `shellcheck` across all `*.sh` files and validates `docker compose config`.
 ## Status and roadmap
 
 See [FINALIZATION_CHECKLIST.md](FINALIZATION_CHECKLIST.md).
-

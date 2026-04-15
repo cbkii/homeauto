@@ -44,6 +44,9 @@ _Last updated: 2026-04-15 (Phase C hardening pass)._
 | S31 | Ops | Scheduled backup + off-site template | ✅ Done | `scripts/stack/backup-schedule-install.sh`, `backup-schedule-remove.sh`, `docs/OPERATIONS.md` | Opt-in; disabled by default |
 | S32 | CI | GitHub Actions SHA pinning | ✅ Done | `.github/workflows/ci.yml`, `.github/workflows/dependency-review.yml` | All three actions pinned to commit SHAs with version comment |
 | S33 | Docs | Service compatibility matrix (HA / Z2M / Mosquitto) | ✅ Done | `docs/SUPPORT_BOUNDARIES.md` | Update when major version bumps occur |
+| S34 | Verification tooling | Smoke script bridge-dispatch evidence options | ✅ Done | `scripts/smoke/run_release_smoke.sh`, `docs/SMOKE_TEST_RUNBOOK.md` | Use on target host |
+| S35 | Release policy | Image tag policy hardened (`zigbee2mqtt:2`) | ✅ Done | `docker-compose.yml`, `docs/SUPPORT_BOUNDARIES.md` | Revisit if major v3 migration needed |
+| S36 | Stack expansion | ESPHome + Node-RED + MariaDB integrated in compose/install/uninstall/docs | ✅ Done | `docker-compose.yml`, `install.sh`, `uninstall.sh`, `docs/` | Runtime smoke evidence on target host |
 
 Legend: ✅ Done, ⏳ Pending, ⚠️ Blocked (reason stated in next-step), ❌ Not started.
 
@@ -80,7 +83,7 @@ Legend: ✅ Done, ⏳ Pending, ⚠️ Blocked (reason stated in next-step), ❌ 
 - [x] Scheduled backup automation — `scripts/stack/backup-schedule-install.sh` + `backup-schedule-remove.sh` added (opt-in systemd timer); off-site transfer template documented in `docs/OPERATIONS.md`.
 - [x] Supply-chain hardening — GitHub Actions workflow steps pinned to commit SHAs (`actions/checkout@v4.2.2`, `upload-artifact@v4.6.2`, `dependency-review-action@v4.7.1`); image tag policy documented in `docs/SUPPORT_BOUNDARIES.md`.
 - [x] HA/Z2M/Mosquitto compatibility matrix — added to `docs/SUPPORT_BOUNDARIES.md`.
-- [ ] Evaluate image version pinning to specific release tags or digests (documented in `docs/SUPPORT_BOUNDARIES.md`; operator decision, not enforced by default).
+- [x] Evaluate image version pinning to specific release tags or digests — decision applied: move from `zigbee2mqtt:latest` to major-pinned `zigbee2mqtt:2`; keep HA `stable` and Mosquitto `2` with documented operator override guidance.
 
 ---
 
@@ -131,6 +134,9 @@ Legend: ✅ Done, ⏳ Pending, ⚠️ Blocked (reason stated in next-step), ❌ 
 | 2026-04-15 | Smoke verify local run: `run_release_smoke.sh --mode verify` passes — uname, bash, docker, compose version, compose config, `docker compose ps` all pass | `artifacts/smoke-report-20260415T065027Z.md` (gitignored; captured in CI artifact on merge) |
 | 2026-04-15 | Phase C hardening pass: privilege analysis + capabilities alternative, firewall helper, backup scheduler, GitHub Actions SHA pinning, compatibility matrix | `docker-compose.yml`, `.github/workflows/ci.yml`, `.github/workflows/dependency-review.yml`, `scripts/security/firewall-setup.sh`, `scripts/stack/backup-schedule-install.sh`, `scripts/stack/backup-schedule-remove.sh`, `docs/SUPPORT_BOUNDARIES.md`, `docs/OPERATIONS.md` |
 | 2026-04-15 | Dependency-review workflow hardened for private repos: non-failing skip notice when GHAS support is unavailable; manual dispatch and least-privilege permissions added | `.github/workflows/dependency-review.yml` |
+| 2026-04-15 | Release tooling improvement pass: smoke script now supports bridge dispatch evidence (`--bridge-test`) and explicit uninstall mode (`--uninstall-mode preserve|purge`); runbook/operations updated | `scripts/smoke/run_release_smoke.sh`, `docs/SMOKE_TEST_RUNBOOK.md`, `docs/OPERATIONS.md` |
+| 2026-04-15 | Image policy adjustment: Zigbee2MQTT moved from floating `latest` to major-pinned `:2`; support/version policy and compatibility matrix refreshed for 2026 baseline | `docker-compose.yml`, `docs/SUPPORT_BOUNDARIES.md` |
+| 2026-04-15 | Service expansion pass: ESPHome (`:6052`), Node-RED (`:1880`), and MariaDB (`:3306`) added with healthchecks + persistent volumes; HA recorder wired to MariaDB via `recorder_db_url` secret; docs/config references updated | `docker-compose.yml`, `install.sh`, `uninstall.sh`, `ha/configuration.yaml.example`, `ha/secrets.yaml.example`, `README.md`, `docs/ARCHITECTURE.md`, `docs/OPERATIONS.md`, `docs/CONFIG_REFERENCE.md`, `docs/SUPPORT_BOUNDARIES.md` |
 
 ---
 

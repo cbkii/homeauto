@@ -8,6 +8,10 @@ Usage: ./scripts/smoke/run_release_smoke.sh [options]
 Options:
   --mode verify|full   verify=non-destructive checks (default), full=install/update/uninstall cycle
   --output <file>      markdown report path (default: ./artifacts/smoke-report-<timestamp>.md)
+  --bridge-test        in full mode, publish a sample MQTT action and capture bridge logs
+  --bridge-payload <p> payload used for --bridge-test (default: 192.168.1.60)
+  --uninstall-mode preserve|purge
+                      full mode cleanup behavior (default: preserve)
   -h, --help           show help
 
 Notes:
@@ -19,6 +23,9 @@ USAGE
 MODE="verify"
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 OUTPUT="./artifacts/smoke-report-${STAMP}.md"
+BRIDGE_TEST=0
+BRIDGE_PAYLOAD="192.168.1.60"
+UNINSTALL_MODE="preserve"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -28,6 +35,17 @@ while [[ $# -gt 0 ]]; do
       ;;
     --output)
       OUTPUT="${2:-}"
+      shift
+      ;;
+    --bridge-test)
+      BRIDGE_TEST=1
+      ;;
+    --bridge-payload)
+      BRIDGE_PAYLOAD="${2:-}"
+      shift
+      ;;
+    --uninstall-mode)
+      UNINSTALL_MODE="${2:-}"
       shift
       ;;
     -h|--help)
@@ -45,6 +63,11 @@ done
 
 if [[ "$MODE" != "verify" && "$MODE" != "full" ]]; then
   echo "Invalid --mode '$MODE' (expected verify|full)"
+  exit 1
+fi
+
+if [[ "$UNINSTALL_MODE" != "preserve" && "$UNINSTALL_MODE" != "purge" ]]; then
+  echo "Invalid --uninstall-mode '$UNINSTALL_MODE' (expected preserve|purge)"
   exit 1
 fi
 
@@ -69,10 +92,17 @@ run_capture() {
   report '```'
 }
 
+warn_note() {
+  report ""
+  report "[WARN] $1"
+}
+
 : >"$OUTPUT"
 report "# Release smoke report"
 report "- Date (UTC): $(date -u)"
 report "- Mode: $MODE"
+report "- Bridge test: $([[ $BRIDGE_TEST -eq 1 ]] && echo enabled || echo disabled)"
+report "- Full uninstall mode: $UNINSTALL_MODE"
 
 overall_status=0
 
@@ -93,12 +123,18 @@ if ! command -v docker >/dev/null 2>&1; then
   exit 1
 fi
 
+compose_env_file=".env"
+if [[ ! -f ".env" && -f ".env.example" ]]; then
+  compose_env_file=".env.example"
+  warn_note ".env not found; using .env.example for compose config/ps validation"
+fi
+
 run_or_flag "docker --version"
 run_or_flag "docker compose version"
-run_or_flag "docker compose config"
+run_or_flag "docker compose --env-file ${compose_env_file} config"
 
 if [[ "$MODE" == "verify" ]]; then
-  run_or_flag "docker compose ps --all"
+  run_or_flag "docker compose --env-file ${compose_env_file} ps --all"
   echo "Report written to $OUTPUT"
   exit $overall_status
 fi
@@ -110,11 +146,31 @@ if [[ $EUID -ne 0 ]]; then
   exit 1
 fi
 
+if [[ $BRIDGE_TEST -eq 1 ]]; then
+  if [[ -f ".env" ]]; then
+    # shellcheck disable=SC1091
+    source ".env"
+  else
+    warn_note "Bridge test requested but .env is missing; publish command may fail"
+  fi
+fi
+
 run_or_flag "./install.sh --start"
 run_or_flag "docker compose ps"
 run_or_flag "./update.sh --restart"
 run_or_flag "docker compose ps"
-run_or_flag "./uninstall.sh --yes"
+
+if [[ $BRIDGE_TEST -eq 1 ]]; then
+  run_or_flag "systemctl is-active ha-action-bridge"
+  run_or_flag "mosquitto_pub -h 127.0.0.1 -u \"\${MQTT_USER}\" -P \"\${MQTT_PASS}\" -t ha/actions/tv_power -m \"${BRIDGE_PAYLOAD}\""
+  run_or_flag "journalctl -u ha-action-bridge -n 50 --no-pager"
+fi
+
+if [[ "$UNINSTALL_MODE" == "purge" ]]; then
+  run_or_flag "./uninstall.sh --yes --purge-data"
+else
+  run_or_flag "./uninstall.sh --yes"
+fi
 
 echo "Report written to $OUTPUT"
 exit $overall_status

@@ -1,4 +1,24 @@
 services:
+  mariadb:
+    image: mariadb:11
+    container_name: mariadb
+    network_mode: host
+    environment:
+      - MYSQL_ROOT_PASSWORD=${MARIADB_ROOT_PASSWORD}
+      - MYSQL_DATABASE=${MARIADB_DATABASE}
+      - MYSQL_USER=${MARIADB_USER}
+      - MYSQL_PASSWORD=${MARIADB_PASSWORD}
+      - TZ=${TZ}
+    volumes:
+      - ./mariadb:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mariadb-admin ping -h 127.0.0.1 -u root -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
   homeassistant:
     image: ghcr.io/home-assistant/home-assistant:stable
     container_name: homeassistant
@@ -24,6 +44,8 @@ services:
       - ./ha:/config
       - /run/dbus:/run/dbus:ro
     depends_on:
+      mariadb:
+        condition: service_healthy
       mosquitto:
         condition: service_healthy
     healthcheck:
@@ -32,6 +54,23 @@ services:
       timeout: 10s
       retries: 5
       start_period: 90s
+    restart: unless-stopped
+
+  esphome:
+    image: ghcr.io/esphome/esphome:stable
+    container_name: esphome
+    network_mode: host
+    environment:
+      - TZ=${TZ}
+    volumes:
+      - ./esphome:/config
+    command: ["dashboard", "/config", "--address", "0.0.0.0", "--port", "6052"]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:6052/ -o /dev/null"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
     restart: unless-stopped
 
   mosquitto:
@@ -53,8 +92,24 @@ services:
       start_period: 10s
     restart: unless-stopped
 
+  nodered:
+    image: nodered/node-red:4
+    container_name: nodered
+    network_mode: host
+    environment:
+      - TZ=${TZ}
+    volumes:
+      - ./nodered:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:1880/ -o /dev/null"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 45s
+    restart: unless-stopped
+
   zigbee2mqtt:
-    image: koenkk/zigbee2mqtt:latest
+    image: koenkk/zigbee2mqtt:2
     container_name: zigbee2mqtt
     network_mode: host
     depends_on:

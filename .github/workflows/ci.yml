@@ -63,6 +63,25 @@ jobs:
         # qa.sh runs 'docker compose config' which requires env vars from .env.
         # In CI we use the example file (no real secrets or devices needed for config validation).
         run: cp .env.example .env
+      - name: Validate required .env.example keys
+        run: |
+          set -euo pipefail
+          required_keys=(
+            TZ
+            ZIGBEE_DEVICE
+            MQTT_USER
+            MQTT_PASS
+            MARIADB_ROOT_PASSWORD
+            MARIADB_DATABASE
+            MARIADB_USER
+            MARIADB_PASSWORD
+          )
+          for key in "${required_keys[@]}"; do
+            if ! grep -qE "^${key}=" .env.example; then
+              echo "Missing ${key} in .env.example"
+              exit 1
+            fi
+          done
       - name: Run QA checks
         run: |
           mkdir -p artifacts

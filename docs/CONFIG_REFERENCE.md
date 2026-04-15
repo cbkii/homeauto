@@ -15,6 +15,10 @@ Top-level environment file.  Copy from `.env.example` and edit before running
 | `ZIGBEE_DEVICE` | ✅ | placeholder | Stable coordinator path (`/dev/serial/by-id/…`) |
 | `MQTT_USER` | ✅ | `ha` | MQTT broker username |
 | `MQTT_PASS` | ✅ | placeholder | MQTT broker password (use a strong value) |
+| `MARIADB_ROOT_PASSWORD` | ✅ | placeholder | MariaDB root password |
+| `MARIADB_DATABASE` | ✅ | `homeauto` | Shared application database name |
+| `MARIADB_USER` | ✅ | `homeauto` | Application DB user |
+| `MARIADB_PASSWORD` | ✅ | placeholder | Password for `MARIADB_USER` |
 | `ANDROID_TV_IP` | ❌ | `192.168.1.60` | Default Android TV LAN IP for helper scripts |
 | `BT_DEVICE_MAC` | ❌ | placeholder | Default Bluetooth device MAC |
 | `BT_PAIR_PIN` | ❌ | _(empty)_ | Bluetooth pairing PIN (leave empty if not needed) |
@@ -40,10 +44,13 @@ mqtt:
   broker: 127.0.0.1
   username: !secret mqtt_user
   password: !secret mqtt_password
+
+recorder:
+  db_url: !secret recorder_db_url
 ```
 
 Credentials are read from `ha/secrets.yaml`.  With `network_mode: host`,
-`127.0.0.1` resolves to the host's Mosquitto service.
+`127.0.0.1` resolves to the host's Mosquitto and MariaDB services.
 
 ### Helper action triggers
 
@@ -61,6 +68,7 @@ HA secrets file.  Copy from `ha/secrets.yaml.example`.
 ```yaml
 mqtt_user: ha
 mqtt_password: <your MQTT_PASS value>
+recorder_db_url: mysql://homeauto:<MARIADB_PASSWORD>@127.0.0.1:3306/homeauto?charset=utf8mb4
 ```
 
 ---
@@ -105,7 +113,7 @@ Full reference: https://www.zigbee2mqtt.io/guide/configuration/
 
 ## `docker-compose.yml`
 
-Controls the three Docker services.  Key settings:
+Controls the stack services.  Key settings:
 
 | Setting | Value | Reason |
 |---|---|---|
@@ -115,7 +123,9 @@ Controls the three Docker services.  Key settings:
 | `/run/udev` volume | `zigbee2mqtt` | udev event access for adapter hot-plug |
 | `devices` (`${ZIGBEE_DEVICE}:/dev/zigbee`) | `zigbee2mqtt` | Coordinator device mapping |
 | `MQTT_USER` / `MQTT_PASS` env vars | `mosquitto` | Required for the Mosquitto healthcheck |
+| `MYSQL_*` env vars | `mariadb` | Initializes DB/user and powers DB healthcheck |
 | `depends_on: condition: service_healthy` | `homeassistant`, `zigbee2mqtt` | Wait for Mosquitto to be healthy before starting |
+| `depends_on: mariadb service_healthy` | `homeassistant` | Wait for SQL backend before recorder startup |
 
 ### Image version policy
 
@@ -123,7 +133,10 @@ Controls the three Docker services.  Key settings:
 |---|---|---|
 | `homeassistant` | `:stable` | Tracks current HA stable release |
 | `mosquitto` | `:2` | Tracks latest Mosquitto 2.x |
-| `zigbee2mqtt` | `:latest` | Tracks latest Z2M release |
+| `zigbee2mqtt` | `:2` | Tracks latest Z2M 2.x |
+| `esphome` | `:stable` | Tracks current ESPHome stable release |
+| `nodered` | `:4` | Tracks Node-RED major v4 line |
+| `mariadb` | `:11` | Tracks MariaDB 11.x major line |
 
 All images are re-pulled on `./update.sh --restart`.
 See `docs/SUPPORT_BOUNDARIES.md` for the version pinning rationale.
