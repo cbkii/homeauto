@@ -131,10 +131,12 @@ functionality requires separate Docker containers or host-level installation.
 
 ### Backup and restore
 
-No automated backup or restore tooling is included in v1 beyond
-`scripts/stack/backup.sh`, which creates a local tar archive.
-Off-site backup, encryption, and scheduled runs are out of scope.
-See `docs/OPERATIONS.md § Backup and restore` for the manual procedure.
+Local backup tooling is available via `scripts/stack/backup.sh` (manual, on-demand)
+and `scripts/stack/backup-schedule-install.sh` (opt-in systemd timer for daily automated
+backups).  Both write timestamped archives to `./backups/` by default.
+
+Off-site backup and encryption are out of scope but the operations guide includes
+rsync and rclone templates.  See `docs/OPERATIONS.md § Backup and restore`.
 
 ### Container privilege
 

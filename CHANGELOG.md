@@ -7,17 +7,43 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+---
+
+## [1.0.0] — 2026-04-15
+
+First stable release.
+
+### Fixed
+- **`docker-compose.yml` mosquitto healthcheck**: removed trailing `-q` with no
+  argument. `mosquitto_pub -q` without a QoS value exits 1 with "Error: -q argument
+  given but no QoS specified." — this caused the broker to never pass its healthcheck,
+  which in turn prevented `homeassistant` and `zigbee2mqtt` from ever starting (both
+  declare `depends_on: mosquitto: condition: service_healthy`).  QoS 0 is the default
+  for `mosquitto_pub` and no `-q` flag is needed.
+- **`install.sh`**: added non-blocking warning when
+  `zigbee2mqtt/configuration.yaml` still contains `REPLACE_ME` credentials; the file
+  is tracked in git and install never overwrites it, so operators could silently run
+  with broken Zigbee2MQTT MQTT credentials.
+- **`AGENTS.md`**: removed stale "Backup/restore automation (deferred to Phase C)"
+  from "Not in scope" — backup IS implemented (S25/S31).
+- **`docs/SUPPORT_BOUNDARIES.md`** §Backup: corrected "scheduled runs are out of
+  scope" — the opt-in systemd timer (`backup-schedule-install.sh`) is available.
+- **`docs/TROUBLESHOOTING.md`**: added MariaDB unhealthy troubleshooting section
+  — HA depends on MariaDB being healthy before starting, making MariaDB failures a
+  likely first-run blocker with no prior guidance.
+
 ### Added
 - Stack expansion services:
   - `mariadb:11` for shared SQL storage (HA recorder baseline)
   - `ghcr.io/esphome/esphome:stable` dashboard service
   - `nodered/node-red:4` flow automation service
 - `ha/configuration.yaml.example`: `recorder.db_url` secret wiring for MariaDB.
+- `ha/configuration.yaml`: `recorder.db_url` wiring added to committed default config.
 - `ha/secrets.yaml.example`: `recorder_db_url` placeholder.
 - CI guardrail: required MariaDB keys are validated in `.env.example`.
 - Phase C hardening: `scripts/security/firewall-setup.sh` — opt-in ufw host
-  firewall baseline (LAN-only allow-list for HA/MQTT/Z2M ports; SSH always
-  allowed; not run automatically).
+  firewall baseline (LAN-only allow-list for HA/MQTT/Z2M/ESPHome/Node-RED ports;
+  SSH always allowed; MariaDB intentionally not exposed to LAN; not run automatically).
 - Phase C hardening: `scripts/stack/backup-schedule-install.sh` and
   `backup-schedule-remove.sh` — opt-in systemd timer for daily automated
   backups (disabled by default; off-site transfer template documented).
@@ -34,11 +60,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `dependency-review-action@v4.7.1`); version tag retained in comment.
 
 ### Changed
-- Compose healthchecks for all three services (`homeassistant`, `mosquitto`,
-  `zigbee2mqtt`) so `docker compose ps` reports health at a glance.
+- Compose healthchecks for all services so `docker compose ps` reports health
+  at a glance.
 - `depends_on: condition: service_healthy` for `homeassistant` and `zigbee2mqtt`
-  on `mosquitto` — services wait for the broker to be healthy before starting.
-- `scripts/stack/backup.sh` — lightweight tar-based backup helper.
+  on `mosquitto`; `homeassistant` also waits for `mariadb` to be healthy.
+- `scripts/stack/backup.sh` — covers all stack data directories: `ha/`,
+  `zigbee2mqtt/`, `mosquitto/`, `esphome/`, `nodered/`, `mariadb/`, `.env`.
 - `docs/SUPPORT_BOUNDARIES.md` — platform support matrix, known limitations,
   HA Container vs HA OS comparison, version pinning policy.
 - CI: copy `.env.example` to `.env` before QA so `docker compose config`
@@ -51,12 +78,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `docker-compose.yml`: `koenkk/zigbee2mqtt` is major-pinned to `:2` (not
   floating `:latest`); MQTT credentials passed as env vars to the `mosquitto`
   service for the healthcheck.
-- `FINALIZATION_CHECKLIST.md`: items S29–S33 added; Phase C backlog rows updated;
-  evidence log extended.
 - CI: `docker compose config` output now routed through `tee` so errors are
   visible directly in the GitHub Actions step log in addition to the artifact.
-- `FINALIZATION_CHECKLIST.md` Phase B: "Capture QA evidence" marked done
-  (QA gate and smoke verify confirmed locally 2026-04-15).
 
 ---
 

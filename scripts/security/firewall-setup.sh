@@ -72,6 +72,10 @@ ufw allow 22/tcp comment 'SSH'
 ufw allow from "${LAN_CIDR}" to any port 8123 proto tcp comment 'Home Assistant (LAN)'
 ufw allow from "${LAN_CIDR}" to any port 1883 proto tcp comment 'Mosquitto MQTT (LAN)'
 ufw allow from "${LAN_CIDR}" to any port 8080 proto tcp comment 'Zigbee2MQTT frontend (LAN)'
+ufw allow from "${LAN_CIDR}" to any port 6052 proto tcp comment 'ESPHome dashboard (LAN)'
+ufw allow from "${LAN_CIDR}" to any port 1880 proto tcp comment 'Node-RED editor (LAN)'
+# MariaDB (3306) is intentionally NOT exposed to the LAN — it is accessed only
+# on localhost by the HA recorder and other stack services via host networking.
 
 # Enable logging for blocked traffic (low = denied packets only)
 ufw logging low

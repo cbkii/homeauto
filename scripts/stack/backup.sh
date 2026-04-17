@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # backup.sh — create a timestamped archive of homeauto stack data.
 #
-# Backs up: ha/, zigbee2mqtt/, mosquitto/, and .env (if present).
+# Backs up: ha/, zigbee2mqtt/, mosquitto/, esphome/, nodered/, mariadb/, and .env (if present).
 # Does NOT back up container images (re-pulled on restore).
 #
 # Usage:
@@ -32,7 +32,7 @@ mkdir -p "$BACKUP_DIR"
 
 TARGETS=()
 
-for d in ha zigbee2mqtt mosquitto; do
+for d in ha zigbee2mqtt mosquitto esphome nodered mariadb; do
   if [[ -d "$d" ]]; then
     TARGETS+=("$d")
   fi

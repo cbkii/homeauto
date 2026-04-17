@@ -133,6 +133,13 @@ if [[ ! -f zigbee2mqtt/configuration.yaml ]]; then
   cp zigbee2mqtt/configuration.yaml.example zigbee2mqtt/configuration.yaml
 fi
 
+if grep -q "REPLACE_ME" zigbee2mqtt/configuration.yaml 2>/dev/null; then
+  echo ""
+  echo "WARNING: zigbee2mqtt/configuration.yaml still contains REPLACE_ME credentials."
+  echo "         Edit it and set mqtt.user / mqtt.password to match .env MQTT_USER / MQTT_PASS"
+  echo "         before starting the stack, or Zigbee2MQTT will fail to connect to MQTT."
+  echo ""
+fi
 if [[ ! -f mosquitto/config/mosquitto.conf ]]; then
   cp mosquitto/config/mosquitto.conf.example mosquitto/config/mosquitto.conf
 fi
