@@ -26,6 +26,8 @@ cp .env.example .env && nano .env
 
 # 2. Install
 sudo ./install.sh
+# optional: include Zigbee + extras
+# sudo ./install.sh --with-all
 
 # 3. Open
 http://<host-ip>:8123
@@ -68,7 +70,7 @@ See [docs/OPERATIONS.md](docs/OPERATIONS.md) for the full setup and maintenance 
 - Debian 12 / Raspberry Pi OS Bookworm (64-bit)
 - Internet access for package and image pulls
 - User with `sudo` access
-- Zigbee coordinator connected (if using Zigbee2MQTT)
+- Zigbee coordinator connected (only if enabling Zigbee profile)
 
 ## Helper actions (ADB / Bluetooth)
 
