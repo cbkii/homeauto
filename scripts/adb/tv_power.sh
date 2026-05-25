@@ -6,5 +6,5 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/_adb_common.sh"
 
 TV_IP="$(require_tv_ip)"
-adb_connect "$TV_IP"
-adb -s "$TV_IP" shell input keyevent 26
+ADB_SERIAL="$(adb_connect "$TV_IP")"
+adb -s "$ADB_SERIAL" shell input keyevent 26

@@ -23,21 +23,7 @@ services:
     image: ghcr.io/home-assistant/home-assistant:stable
     container_name: homeassistant
     network_mode: host
-    # privileged: true is the recommended default for HA Container to support
-    # hardware integrations (Bluetooth via D-Bus, USB, some HA core features).
-    # See docs/SUPPORT_BOUNDARIES.md §Container privilege for the Phase C
-    # capabilities-based alternative and its known limitations.
     privileged: true
-    # PHASE C ALTERNATIVE — experimental, not default.  Replace privileged: true
-    # with the block below after testing all required integrations on your hardware.
-    # Not all HA integrations are guaranteed to work without full privilege.
-    #   privileged: false
-    #   cap_add:
-    #     - NET_ADMIN    # mDNS / multicast, network management integrations
-    #     - NET_RAW      # raw sockets (some integrations need this)
-    #     - SYS_RAWIO    # raw I/O for some USB/serial integrations
-    #   security_opt:
-    #     - no-new-privileges:true
     environment:
       - TZ=${TZ}
     volumes:
@@ -54,23 +40,6 @@ services:
       timeout: 10s
       retries: 5
       start_period: 90s
-    restart: unless-stopped
-
-  esphome:
-    image: ghcr.io/esphome/esphome:stable
-    container_name: esphome
-    network_mode: host
-    environment:
-      - TZ=${TZ}
-    volumes:
-      - ./esphome:/config
-    command: ["dashboard", "/config", "--address", "0.0.0.0", "--port", "6052"]
-    healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:6052/ -o /dev/null"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 60s
     restart: unless-stopped
 
   mosquitto:
@@ -92,23 +61,8 @@ services:
       start_period: 10s
     restart: unless-stopped
 
-  nodered:
-    image: nodered/node-red:4
-    container_name: nodered
-    network_mode: host
-    environment:
-      - TZ=${TZ}
-    volumes:
-      - ./nodered:/data
-    healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:1880/ -o /dev/null"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 45s
-    restart: unless-stopped
-
   zigbee2mqtt:
+    profiles: ["zigbee"]
     image: koenkk/zigbee2mqtt:2
     container_name: zigbee2mqtt
     network_mode: host
@@ -128,4 +82,39 @@ services:
       timeout: 10s
       retries: 5
       start_period: 60s
+    restart: unless-stopped
+
+  esphome:
+    profiles: ["extras"]
+    image: ghcr.io/esphome/esphome:stable
+    container_name: esphome
+    network_mode: host
+    environment:
+      - TZ=${TZ}
+    volumes:
+      - ./esphome:/config
+    command: ["dashboard", "/config", "--address", "0.0.0.0", "--port", "6052"]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:6052/ -o /dev/null"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    restart: unless-stopped
+
+  nodered:
+    profiles: ["extras"]
+    image: nodered/node-red:4
+    container_name: nodered
+    network_mode: host
+    environment:
+      - TZ=${TZ}
+    volumes:
+      - ./nodered:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:1880/ -o /dev/null"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 45s
     restart: unless-stopped
