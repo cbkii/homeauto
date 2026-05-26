@@ -3,7 +3,7 @@
 Authoritative tracker for implementation status, release readiness, roadmap,
 and completion evidence.
 
-_Last updated: 2026-04-15 (v1.0.0 release finalization pass)._
+_Last updated: 2026-05-25 (Trixie compatibility planning pass)._
 
 ---
 
@@ -47,6 +47,7 @@ _Last updated: 2026-04-15 (v1.0.0 release finalization pass)._
 | S34 | Verification tooling | Smoke script bridge-dispatch evidence options | ✅ Done | `scripts/smoke/run_release_smoke.sh`, `docs/SMOKE_TEST_RUNBOOK.md` | Use on target host |
 | S35 | Release policy | Image tag policy hardened (`zigbee2mqtt:2`) | ✅ Done | `docker-compose.yml`, `docs/SUPPORT_BOUNDARIES.md` | Revisit if major v3 migration needed |
 | S36 | Stack expansion | ESPHome + Node-RED + MariaDB integrated in compose/install/uninstall/docs | ✅ Done | `docker-compose.yml`, `install.sh`, `uninstall.sh`, `docs/` | Runtime smoke evidence on target host |
+| S37 | Platform compatibility | Debian Trixie (Pi 5) compatibility lane with preflight and pinned image profile | ⏳ Pending | `install.sh`, `docker-compose.pinned.yml`, `docs/SUPPORT_BOUNDARIES.md`, `README.md` | Capture Trixie smoke evidence + close with artifacts |
 
 Legend: ✅ Done, ⏳ Pending, ⚠️ Blocked (reason stated in next-step), ❌ Not started.
 
@@ -63,6 +64,7 @@ Legend: ✅ Done, ⏳ Pending, ⚠️ Blocked (reason stated in next-step), ❌ 
 - [ ] Validate ADB helper scripts against a real LAN Android TV.
 - [ ] Validate Bluetooth pair/trust/connect scripts against a real device.
 - [ ] Validate `ha-action-bridge` service start, MQTT dispatch, and script execution.
+- [ ] Execute Bookworm + Trixie Pi 5 smoke evidence and attach artifacts for S37.
 
 ### Phase B — Evidence and release readiness
 - [x] Compose healthchecks implemented (`docker compose ps` shows health status).
@@ -139,6 +141,7 @@ Legend: ✅ Done, ⏳ Pending, ⚠️ Blocked (reason stated in next-step), ❌ 
 | 2026-04-15 | Service expansion pass: ESPHome (`:6052`), Node-RED (`:1880`), and MariaDB (`:3306`) added with healthchecks + persistent volumes; HA recorder wired to MariaDB via `recorder_db_url` secret; docs/config references updated | `docker-compose.yml`, `install.sh`, `uninstall.sh`, `ha/configuration.yaml.example`, `ha/secrets.yaml.example`, `README.md`, `docs/ARCHITECTURE.md`, `docs/OPERATIONS.md`, `docs/CONFIG_REFERENCE.md`, `docs/SUPPORT_BOUNDARIES.md` |
 | 2026-04-15 | v1.0.0 finalization pass: `ha/configuration.yaml` updated to match example (recorder stanza added); `backup.sh` extended to cover esphome/, nodered/, mariadb/; `firewall-setup.sh` extended with ESPHome/Node-RED ports and MariaDB exclusion comment; `.env.example` misleading shell_command comment fixed; CHANGELOG cut to [1.0.0]; docs/OPERATIONS.md backup table and firewall section updated | `ha/configuration.yaml`, `scripts/stack/backup.sh`, `scripts/security/firewall-setup.sh`, `.env.example`, `CHANGELOG.md`, `docs/OPERATIONS.md` |
 | 2026-04-15 | v1.0.0 second-pass audit: **critical fix** — `docker-compose.yml` mosquitto healthcheck had trailing `-q` with no argument (confirmed: `mosquitto_pub` exits 1 with "Error: -q argument given but no QoS specified") — stack would never start on real hardware; removed stale `-q`; stale AGENTS.md/SUPPORT_BOUNDARIES.md backup language updated; MariaDB troubleshooting section added; install.sh REPLACE_ME credential warning added | `docker-compose.yml`, `AGENTS.md`, `docs/SUPPORT_BOUNDARIES.md`, `docs/TROUBLESHOOTING.md`, `install.sh` |
+| 2026-05-25 | Trixie compatibility planning pass: added install preflight mode, package presence checks, pinned compose profile, smoke report host metadata, and support-consistency QA checks | `install.sh`, `docker-compose.pinned.yml`, `scripts/smoke/run_release_smoke.sh`, `scripts/qa/check-support-consistency.sh`, `scripts/qa.sh`, `docs/SUPPORT_BOUNDARIES.md`, `README.md`, `docs/OPERATIONS.md`, `update.sh` |
 
 ---
 

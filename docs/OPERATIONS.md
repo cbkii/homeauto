@@ -6,7 +6,8 @@ Day-to-day reference for running and maintaining the homeauto stack.
 
 ## Prerequisites
 
-- Debian 12 / Raspberry Pi OS Bookworm (64-bit)
+- Debian 12 / Raspberry Pi OS Bookworm (64-bit) baseline
+- Debian 13 / Raspberry Pi OS Trixie (64-bit) compatibility candidate
 - User with `sudo` access
 - Internet access for package and image pulls
 - Zigbee coordinator connected (if using Zigbee2MQTT)
@@ -100,6 +101,19 @@ Additional UIs:
 |---|---|
 | `--no-start` | Install without starting the stack |
 | `--rotate-mqtt-password` | Regenerate the MQTT password file from `.env` |
+| `--preflight-only` | Run platform and dependency checks without changing the host |
+
+### Trixie package variance troubleshooting
+
+On some Debian 13 / Pi OS Trixie hosts, package naming or repository state can
+drift over time. Run:
+
+```bash
+sudo ./install.sh --preflight-only
+```
+
+If preflight reports missing packages, resolve apt repository issues first, then
+re-run install.
 
 ---
 
@@ -109,6 +123,13 @@ Additional UIs:
 
 ```bash
 ./update.sh --restart
+```
+
+To use explicit pinned image versions:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.pinned.yml pull
+docker compose -f docker-compose.yml -f docker-compose.pinned.yml up -d
 ```
 
 ### Pull images only (no restart)

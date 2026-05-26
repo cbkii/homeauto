@@ -19,5 +19,6 @@ fi
 
 shellcheck "${shell_files[@]}"
 docker compose config >/dev/null
+./scripts/qa/check-support-consistency.sh
 
 echo "QA checks passed"

@@ -10,12 +10,50 @@ not support, and what is out of scope for the homelab-stable v1 baseline.
 | Requirement | Detail |
 |---|---|
 | OS | Debian 12 (Bookworm) · Raspberry Pi OS Bookworm 64-bit |
+| OS (compatibility candidate) | Debian 13 (Trixie) · Raspberry Pi OS Trixie 64-bit |
 | Architecture | x86-64 · arm64 (Raspberry Pi 4 / 5) |
 | Docker | Docker CE / `docker.io` package with Compose plugin |
 | Install type | Docker Compose (not HA OS, not Supervisor) |
 
 Other Linux distributions may work but are not tested and not supported.
 32-bit ARM (`armhf`) is not tested.
+
+**Decision note (2026-05-25):** Trixie is now a compatibility candidate for
+Raspberry Pi 5. It is supported for pilot/homelab use when full smoke evidence
+exists for your target host; production sign-off requires local validation.
+
+## Raspberry Pi 5 + Debian Trixie compatibility gate
+
+Minimum expectations for pilot support:
+
+| Area | Minimum expectation |
+|---|---|
+| Kernel | Debian/Pi OS Trixie default kernel for arm64 on Pi 5 (reported by `uname -r`) |
+| Docker Engine | Docker 24+ (`docker --version`) |
+| Compose plugin | Compose v2.20+ (`docker compose version`) |
+| Install preflight | `sudo ./install.sh --preflight-only` passes |
+| QA gate | `./scripts/qa.sh` passes |
+| Smoke gate | `./scripts/smoke/run_release_smoke.sh --mode verify` passes; full mode required before release sign-off |
+
+Rollback policy for Trixie regressions:
+- Pin service images using `docker-compose.pinned.yml`.
+- If host-level regressions remain, rollback host OS to Bookworm baseline and
+  restore from backup.
+
+## Healthcheck command dependencies
+
+Healthchecks rely on utilities present in each upstream image. If image
+maintainers remove these binaries, service health can fail even when containers
+start.
+
+| Service | Healthcheck command dependency | Typical failure symptom |
+|---|---|---|
+| mariadb | `mariadb-admin` | DB container loops unhealthy; HA waits on SQL |
+| mosquitto | `mosquitto_pub` | MQTT service remains unhealthy; dependent services wait |
+| homeassistant | `curl` | HA marked unhealthy despite running UI |
+| esphome | `curl` | ESPHome marked unhealthy despite dashboard accessibility |
+| nodered | `curl` | Node-RED marked unhealthy despite editor availability |
+| zigbee2mqtt | `wget` | Z2M unhealthy; may also indicate missing coordinator |
 
 ---
 
