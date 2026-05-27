@@ -12,5 +12,5 @@ if [[ -z "$APP_ID" ]]; then
 fi
 
 TV_IP="$(require_tv_ip)"
-adb_connect "$TV_IP"
-adb -s "$TV_IP" shell monkey -p "$APP_ID" -c android.intent.category.LAUNCHER 1 >/dev/null
+ADB_SERIAL="$(adb_connect "$TV_IP")"
+adb -s "$ADB_SERIAL" shell monkey -p "$APP_ID" -c android.intent.category.LAUNCHER 1 >/dev/null

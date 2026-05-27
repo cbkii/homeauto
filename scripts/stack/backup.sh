@@ -1,60 +1,42 @@
 #!/usr/bin/env bash
-# backup.sh — create a timestamped archive of homeauto stack data.
-#
-# Backs up: ha/, zigbee2mqtt/, mosquitto/, esphome/, nodered/, mariadb/, and .env (if present).
-# Does NOT back up container images (re-pulled on restore).
-#
-# Usage:
-#   ./scripts/stack/backup.sh [backup-dir]
-#
-# Arguments:
-#   backup-dir   Directory to write the archive to (default: ./backups)
-#
-# The archive is a gzip-compressed tar named:
-#   homeauto-backup-<YYYYMMDDTHHMMSSZ>.tar.gz
-#
-# Restore:
-#   tar -xzf homeauto-backup-<timestamp>.tar.gz
-#   sudo ./install.sh --no-start   # reconcile host state
-#   docker compose up -d
 set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd -- "$SCRIPT_DIR/../.." && pwd)"
-
 BACKUP_DIR="${1:-${ROOT_DIR}/backups}"
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
-BACKUP_FILE="${BACKUP_DIR}/homeauto-backup-${STAMP}.tar.gz"
+WORK_DIR="${BACKUP_DIR}/homeauto-backup-${STAMP}"
+BACKUP_FILE="${WORK_DIR}.tar.gz"
 
+mkdir -p "$BACKUP_DIR" "$WORK_DIR"
 cd "$ROOT_DIR"
 
-mkdir -p "$BACKUP_DIR"
-
-TARGETS=()
-
-for d in ha zigbee2mqtt mosquitto esphome nodered mariadb; do
-  if [[ -d "$d" ]]; then
-    TARGETS+=("$d")
-  fi
+for d in ha zigbee2mqtt mosquitto esphome nodered; do
+  [[ -d "$d" ]] && cp -a "$d" "$WORK_DIR/"
 done
 
-if [[ -f .env ]]; then
-  TARGETS+=(.env)
+[[ -f .env ]] && install -m 0600 .env "$WORK_DIR/.env"
+
+db_dump_status="skipped"
+if command -v docker >/dev/null 2>&1 && docker compose --profile core ps mariadb >/dev/null 2>&1; then
+  echo "Creating MariaDB logical dump..."
+  if docker compose --profile core exec -T mariadb sh -lc 'exec mariadb-dump -uroot -p"$MYSQL_ROOT_PASSWORD" --all-databases --single-transaction --quick --routines --events' > "$WORK_DIR/mariadb-logical.sql"; then
+    db_dump_status="ok"
+  else
+    db_dump_status="failed"
+    echo "ERROR: MariaDB logical dump failed. Backup archive will be marked partial." >&2
+  fi
 fi
 
-if [[ ${#TARGETS[@]} -eq 0 ]]; then
-  echo "Nothing to back up — no data directories or .env found."
-  exit 1
+chmod -R go-rwx "$WORK_DIR" || true
+printf 'db_logical_dump_status=%s\n' "$db_dump_status" > "$WORK_DIR/backup-manifest.txt"
+
+tar -czf "$BACKUP_FILE" -C "$BACKUP_DIR" "$(basename "$WORK_DIR")"
+rm -rf "$WORK_DIR"
+
+if [[ "$db_dump_status" == "failed" ]]; then
+  echo "Backup complete (PARTIAL - DB logical dump failed): $BACKUP_FILE"
+  exit 2
 fi
 
-echo "Backing up: ${TARGETS[*]}"
-echo "Writing to: ${BACKUP_FILE}"
-
-tar -czf "$BACKUP_FILE" "${TARGETS[@]}"
-
-echo "Backup complete: ${BACKUP_FILE}"
-echo ""
-echo "To restore:"
-echo "  tar -xzf ${BACKUP_FILE}"
-echo "  sudo ./install.sh --no-start   # reconcile host state after restore"
-echo "  docker compose up -d"
+echo "Backup complete: $BACKUP_FILE"

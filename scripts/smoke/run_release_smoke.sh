@@ -82,11 +82,11 @@ report() {
 }
 
 run_capture() {
-  local cmd="$1"
+  local cmd="$*"
   report ""
   report "## $cmd"
   report '```text'
-  if eval "$cmd" >>"$OUTPUT" 2>&1; then
+  if "$@" >>"$OUTPUT" 2>&1; then
     report "[PASS] $cmd"
   else
     report "[FAIL] $cmd"
@@ -117,14 +117,13 @@ report "- Full uninstall mode: $UNINSTALL_MODE"
 overall_status=0
 
 run_or_flag() {
-  local cmd="$1"
-  if ! run_capture "$cmd"; then
+  if ! run_capture "$@"; then
     overall_status=1
   fi
 }
 
-run_or_flag "uname -a"
-run_or_flag "bash --version | head -n 1"
+run_or_flag uname -a
+run_or_flag bash --version
 
 if ! command -v docker >/dev/null 2>&1; then
   report ""
@@ -139,12 +138,12 @@ if [[ ! -f ".env" && -f ".env.example" ]]; then
   warn_note ".env not found; using .env.example for compose config/ps validation"
 fi
 
-run_or_flag "docker --version"
-run_or_flag "docker compose version"
-run_or_flag "docker compose --env-file ${compose_env_file} config"
+run_or_flag docker --version
+run_or_flag docker compose version
+run_or_flag docker compose --env-file "${compose_env_file}" config
 
 if [[ "$MODE" == "verify" ]]; then
-  run_or_flag "docker compose --env-file ${compose_env_file} ps --all"
+  run_or_flag docker compose --env-file "${compose_env_file}" ps --all
   echo "Report written to $OUTPUT"
   exit $overall_status
 fi
@@ -165,21 +164,21 @@ if [[ $BRIDGE_TEST -eq 1 ]]; then
   fi
 fi
 
-run_or_flag "./install.sh --start"
-run_or_flag "docker compose ps"
-run_or_flag "./update.sh --restart"
-run_or_flag "docker compose ps"
+run_or_flag ./install.sh --start --with-all
+run_or_flag docker compose --profile zigbee --profile extras ps
+run_or_flag ./update.sh --restart
+run_or_flag docker compose --profile zigbee --profile extras ps
 
 if [[ $BRIDGE_TEST -eq 1 ]]; then
-  run_or_flag "systemctl is-active ha-action-bridge"
-  run_or_flag "mosquitto_pub -h 127.0.0.1 -u \"\${MQTT_USER}\" -P \"\${MQTT_PASS}\" -t ha/actions/tv_power -m \"${BRIDGE_PAYLOAD}\""
-  run_or_flag "journalctl -u ha-action-bridge -n 50 --no-pager"
+  run_or_flag systemctl is-active ha-action-bridge
+  run_or_flag mosquitto_pub -h 127.0.0.1 -u "${MQTT_USER}" -P "${MQTT_PASS}" -t ha/actions/tv_power -m "${BRIDGE_PAYLOAD}"
+  run_or_flag journalctl -u ha-action-bridge -n 50 --no-pager
 fi
 
 if [[ "$UNINSTALL_MODE" == "purge" ]]; then
-  run_or_flag "./uninstall.sh --yes --purge-data"
+  run_or_flag ./uninstall.sh --yes --purge-data
 else
-  run_or_flag "./uninstall.sh --yes"
+  run_or_flag ./uninstall.sh --yes
 fi
 
 echo "Report written to $OUTPUT"

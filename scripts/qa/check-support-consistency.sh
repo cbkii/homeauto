@@ -14,15 +14,15 @@ readme_mentions_trixie=0
 support_mentions_trixie=0
 checklist_has_s37=0
 
-if rg -qi 'trixie|debian 13' "$README_FILE"; then
+if grep -E -qi 'trixie|debian 13' "$README_FILE"; then
   readme_mentions_trixie=1
 fi
 
-if rg -qi 'trixie|debian 13' "$SUPPORT_FILE"; then
+if grep -E -qi 'trixie|debian 13' "$SUPPORT_FILE"; then
   support_mentions_trixie=1
 fi
 
-if rg -q '^\| S37 \|' "$CHECKLIST_FILE"; then
+if grep -E -q '^\| S37 \|' "$CHECKLIST_FILE"; then
   checklist_has_s37=1
 fi
 

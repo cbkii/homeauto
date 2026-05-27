@@ -18,7 +18,17 @@ if [[ ${#shell_files[@]} -eq 0 ]]; then
 fi
 
 shellcheck "${shell_files[@]}"
-docker compose config >/dev/null
+
+if command -v docker >/dev/null 2>&1; then
+  docker compose config >/dev/null
+  docker compose --profile zigbee config >/dev/null
+  docker compose --profile extras config >/dev/null
+  docker compose --profile zigbee --profile extras config >/dev/null
+else
+  echo "WARNING: docker not available; skipping compose config checks"
+fi
+
+./scripts/test/test_release_hardening.sh
 ./scripts/qa/check-support-consistency.sh
 
 echo "QA checks passed"
