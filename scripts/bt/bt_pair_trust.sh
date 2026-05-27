@@ -10,31 +10,26 @@ if [[ -z "$DEVICE_MAC" ]]; then
 fi
 
 if [[ -n "$PAIR_PIN" ]]; then
-  bluetoothctl <<BTCTL
-power on
-agent KeyboardOnly
-default-agent
-discoverable off
-pairable on
-scan on
-pair $DEVICE_MAC
-trust $DEVICE_MAC
-connect $DEVICE_MAC
-scan off
-pairable off
-BTCTL
-else
-  bluetoothctl <<BTCTL
+  echo "NOTE: BT_PAIR_PIN is currently informational only; bluetoothctl non-interactive PIN entry is not reliable across adapters."
+fi
+
+echo "=== bluetoothctl show ==="
+bluetoothctl show || true
+echo "=== paired-devices ==="
+bluetoothctl paired-devices || true
+
+echo "Attempting pair/trust/connect for ${DEVICE_MAC}"
+bluetoothctl <<BTCTL
 power on
 agent on
 default-agent
 discoverable off
 pairable on
-scan on
 pair $DEVICE_MAC
 trust $DEVICE_MAC
 connect $DEVICE_MAC
-scan off
 pairable off
 BTCTL
-fi
+
+echo "=== device status ==="
+bluetoothctl info "$DEVICE_MAC" || true
