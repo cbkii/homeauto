@@ -67,7 +67,8 @@ See [docs/OPERATIONS.md](docs/OPERATIONS.md) for the full setup and maintenance 
 
 ## Prerequisites
 
-- Debian 12 / Raspberry Pi OS Bookworm (64-bit)
+- Debian 12 / Raspberry Pi OS Bookworm (64-bit) **or**
+  Debian 13 / Raspberry Pi OS Trixie (64-bit, compatibility candidate)
 - Internet access for package and image pulls
 - User with `sudo` access
 - Zigbee coordinator connected (only if enabling Zigbee profile)

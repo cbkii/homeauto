@@ -29,5 +29,6 @@ else
 fi
 
 ./scripts/test/test_release_hardening.sh
+./scripts/qa/check-support-consistency.sh
 
 echo "QA checks passed"

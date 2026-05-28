@@ -25,8 +25,10 @@ fi
 pass "no unsafe eval usage"
 
 # 2) malformed command/token regressions across docs/scripts/workflows
+# NOTE: this file is excluded from the scan to avoid matching its own pattern definition.
+# shellcheck disable=SC2016
 pattern='cp\.env|\.env\.example\.env|source\.env|\[\[? -f\.env|install -m 0600\.env|sudo\./|run_or_flag\./|run:\./|if!|find\.|"\$MODE"!=|"\$UNINSTALL_MODE"!=|using\.env|but\.env|no\.env|before\.env|and\.env'
-if search_cmd -nE "$pattern" "${scan_files[@]}" 2>/dev/null; then
+if search_cmd -nE "$pattern" "${scan_files[@]}" 2>/dev/null | grep -v 'scripts/test/test_release_hardening\.sh'; then
   fail "malformed command/token pattern found"
 fi
 pass "no malformed command/token regressions"
@@ -55,10 +57,12 @@ version_ge_test 25.0.0 23.0.0 || fail "version compare newer"
 pass "docker version guard semantics"
 
 # 6) Zigbee device validation is conditional on zigbee profile
+# shellcheck disable=SC2016
 grep -q 'if \[\[ ",\$PROFILES," == \*",zigbee,"\* \]\] && \[\[ ! -e "\$ZIGBEE_DEVICE" \]\]' install.sh || fail "zigbee conditional validation missing"
 pass "zigbee conditional validation"
 
 # 7) smoke harness uses argv-safe execution
+# shellcheck disable=SC2016
 grep -q 'if "\$@" >>"\$OUTPUT" 2>&1; then' scripts/smoke/run_release_smoke.sh || fail "smoke argv-safe execution missing"
 pass "smoke verify argv-safe execution"
 
