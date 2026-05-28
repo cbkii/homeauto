@@ -12,7 +12,7 @@ Top-level environment file.  Copy from `.env.example` and edit before running
 | Variable | Required | Default in example | Description |
 |---|---|---|---|
 | `TZ` | ✅ | `Etc/UTC` | IANA timezone string for containers |
-| `ZIGBEE_DEVICE` | ✅ | placeholder | Stable coordinator path (`/dev/serial/by-id/…`) |
+| `ZIGBEE_DEVICE` | ⚠️ (required when Zigbee profile enabled) | placeholder | Stable coordinator path (`/dev/serial/by-id/…`) |
 | `MQTT_USER` | ✅ | `ha` | MQTT broker username |
 | `MQTT_PASS` | ✅ | placeholder | MQTT broker password (use a strong value) |
 | `MARIADB_ROOT_PASSWORD` | ✅ | placeholder | MariaDB root password |
@@ -20,6 +20,7 @@ Top-level environment file.  Copy from `.env.example` and edit before running
 | `MARIADB_USER` | ✅ | `homeauto` | Application DB user |
 | `MARIADB_PASSWORD` | ✅ | placeholder | Password for `MARIADB_USER` |
 | `ANDROID_TV_IP` | ❌ | `192.168.1.60` | Default Android TV LAN IP for helper scripts |
+| `ANDROID_TV_PORT` | ❌ | `5555` | Default Android TV ADB TCP port |
 | `BT_DEVICE_MAC` | ❌ | placeholder | Default Bluetooth device MAC |
 | `BT_PAIR_PIN` | ❌ | _(empty)_ | Bluetooth pairing PIN (leave empty if not needed) |
 
@@ -173,4 +174,15 @@ these automatically from the MQTT payload.  For direct invocation:
 | Variable | Required | Description |
 |---|---|---|
 | `BT_DEVICE_MAC` | ✅ | Target device MAC address |
-| `BT_PAIR_PIN` | ❌ | Pairing PIN (`bt_pair_trust.sh` only; empty = no PIN) |
+| `BT_PAIR_PIN` | ❌ | Informational only; manual interactive pairing may still be required |
+
+
+## Compose profiles
+
+Default services (no profile required): Home Assistant + Mosquitto + MariaDB
+
+Optional profiles:
+- `zigbee`: Zigbee2MQTT
+- `extras`: ESPHome + Node-RED
+
+Use `install.sh --profiles` or `--with-zigbee` / `--with-extras` / `--with-all` to choose optional profiles.
