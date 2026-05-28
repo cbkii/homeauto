@@ -122,6 +122,20 @@ run_or_flag() {
   fi
 }
 
+run_or_flag_quiet() {
+  local cmd="$*"
+  report ""
+  report "## $cmd"
+  report '```text'
+  if "$@" >/dev/null 2>&1; then
+    report "[PASS] $cmd"
+  else
+    report "[FAIL] $cmd"
+    overall_status=1
+  fi
+  report '```'
+}
+
 run_or_flag uname -a
 run_or_flag bash --version
 
@@ -140,7 +154,7 @@ fi
 
 run_or_flag docker --version
 run_or_flag docker compose version
-run_or_flag docker compose --env-file "${compose_env_file}" config
+run_or_flag_quiet docker compose --env-file "${compose_env_file}" config
 
 if [[ "$MODE" == "verify" ]]; then
   run_or_flag docker compose --env-file "${compose_env_file}" ps --all

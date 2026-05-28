@@ -157,7 +157,7 @@ if [[ ! -f .env ]]; then
   exit 1
 fi
 
-gen_secret() { tr -dc 'A-Za-z0-9!@#%^*_+=-' </dev/urandom | head -c 32; }
+gen_secret() { (set +o pipefail; LC_ALL=C tr -dc 'A-Za-z0-9!@#%^*_+=-' </dev/urandom | head -c 32); }
 set_env_var() {
   local key="$1" value="$2"
   sed -i -E "s|^${key}=.*$|${key}=${value}|" .env
@@ -231,8 +231,12 @@ fi
 [[ -f zigbee2mqtt/configuration.yaml ]] || cp zigbee2mqtt/configuration.yaml.example zigbee2mqtt/configuration.yaml
 [[ -f mosquitto/config/mosquitto.conf ]] || cp mosquitto/config/mosquitto.conf.example mosquitto/config/mosquitto.conf
 
-if grep -Eq 'REPLACE_ME|replace_with_strong_|changeme|password' ha/secrets.yaml zigbee2mqtt/configuration.yaml; then
-  echo "Unsafe placeholders found in ha/secrets.yaml or zigbee2mqtt/configuration.yaml."
+secret_scan_files=(ha/secrets.yaml)
+if [[ ",$PROFILES," == *",zigbee,"* ]]; then
+  secret_scan_files+=(zigbee2mqtt/configuration.yaml)
+fi
+if grep -Eq 'REPLACE_ME|replace_with_strong_|changeme|password' "${secret_scan_files[@]}"; then
+  echo "Unsafe placeholders found in required secrets configuration files."
   echo "Update those files before starting services."
   exit 1
 fi
