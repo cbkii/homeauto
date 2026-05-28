@@ -6,10 +6,12 @@ Day-to-day reference for running and maintaining the homeauto stack.
 
 ## Prerequisites
 
-- Debian 12 / Raspberry Pi OS Bookworm (64-bit)
+- Debian 12 / Raspberry Pi OS Bookworm (64-bit) baseline
+- Debian 13 / Raspberry Pi OS Trixie (64-bit) compatibility candidate
 - User with `sudo` access
 - Internet access for package and image pulls
-- Zigbee coordinator connected (if using Zigbee2MQTT)
+- Docker Engine 23.0.0+ (installer validates server version)
+- Zigbee coordinator connected (only if enabling Zigbee profile)
 
 ---
 
@@ -40,6 +42,7 @@ Optional variables (used as defaults by helper scripts):
 | Variable | Description |
 |---|---|
 | `ANDROID_TV_IP` | LAN IP of Android TV device |
+| `ANDROID_TV_PORT` | ADB TCP port (default `5555`) |
 | `BT_DEVICE_MAC` | Bluetooth device MAC address |
 | `BT_PAIR_PIN` | PIN for Bluetooth pairing (leave empty if not required) |
 
@@ -100,6 +103,19 @@ Additional UIs:
 |---|---|
 | `--no-start` | Install without starting the stack |
 | `--rotate-mqtt-password` | Regenerate the MQTT password file from `.env` |
+| `--preflight-only` | Run platform and dependency checks without changing the host |
+
+### Trixie package variance troubleshooting
+
+On some Debian 13 / Pi OS Trixie hosts, package naming or repository state can
+drift over time. Run:
+
+```bash
+sudo ./install.sh --preflight-only
+```
+
+If preflight reports missing packages, resolve apt repository issues first, then
+re-run install.
 
 ---
 
@@ -109,6 +125,13 @@ Additional UIs:
 
 ```bash
 ./update.sh --restart
+```
+
+To use explicit pinned image versions:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.pinned.yml pull
+docker compose -f docker-compose.yml -f docker-compose.pinned.yml up -d
 ```
 
 ### Pull images only (no restart)
@@ -391,3 +414,27 @@ sudo ufw reset      # reset all rules and disable
 ```
 
 See `scripts/security/firewall-setup.sh` for the full rule set and comments.
+
+---
+
+## Backup and restore
+
+Create backup:
+
+```bash
+./scripts/stack/backup.sh
+```
+
+Restore workflow (manual):
+
+```bash
+docker compose --profile zigbee --profile extras down
+tar -xzf backups/homeauto-backup-<timestamp>.tar.gz
+# if mariadb-logical.sql exists in extracted backup:
+docker compose up -d mariadb
+docker compose exec -T mariadb sh -lc 'mariadb -uroot -p"$MYSQL_ROOT_PASSWORD" < /dev/stdin' < homeauto-backup-<timestamp>/mariadb-logical.sql
+docker compose --profile zigbee --profile extras up -d
+```
+
+Each backup includes `backup-manifest.txt` with `db_logical_dump_status=ok|skipped|failed`.
+If status is `failed`, treat the backup as partial and resolve DB backup issues before relying on it.

@@ -19,7 +19,7 @@ search_cmd() {
 }
 
 # 1) no unsafe eval in runtime scripts
-if search_cmd -n "\beval\b" scripts install.sh update.sh uninstall.sh 2>/dev/null | grep -v 'scripts/test/test_release_hardening.sh' | grep -v '#'; then
+if search_cmd -n "\beval\b" scripts install.sh update.sh uninstall.sh 2>/dev/null | grep -v 'scripts/test/test_release_hardening.sh' | grep -Ev '^[^:]+:[0-9]+:[[:space:]]*#'; then
   fail "unexpected eval usage"
 fi
 pass "no unsafe eval usage"

@@ -9,6 +9,7 @@ Usage: sudo ./install.sh [options]
 
 Options:
   --rotate-mqtt-password   Regenerate mosquitto password file from .env
+  --preflight-only         Validate host/platform/dependencies and exit
   --start                  Start stack after install (default)
   --no-start               Do not start stack
   --profiles <csv>         Optional Compose profiles to enable (default: none)
@@ -54,6 +55,7 @@ require_docker_runtime() {
 
 ROTATE_MQTT_PASSWORD=0
 START_STACK=1
+PREFLIGHT_ONLY=0
 PROFILES=""
 GENERATE_SECRETS=0
 
@@ -62,6 +64,7 @@ while [[ $# -gt 0 ]]; do
     --rotate-mqtt-password) ROTATE_MQTT_PASSWORD=1 ;;
     --start) START_STACK=1 ;;
     --no-start) START_STACK=0 ;;
+    --preflight-only) PREFLIGHT_ONLY=1; START_STACK=0 ;;
     --profiles) PROFILES="${2:-}"; shift ;;
     --with-zigbee) PROFILES="zigbee" ;;
     --with-extras) PROFILES="extras" ;;
@@ -73,12 +76,88 @@ while [[ $# -gt 0 ]]; do
   shift
 done
 
+check_platform_support() {
+  # Platform compatibility map (Debian-family):
+  # - bookworm (Debian 12 / Raspberry Pi OS Bookworm): fully supported.
+  # - trixie   (Debian 13 / Raspberry Pi OS Trixie): compatibility candidate.
+  #   Expected package names currently: docker.io docker-compose-plugin bluez adb mosquitto-clients
+  #   Validate on target host and track evidence in FINALIZATION_CHECKLIST.md (S37).
+  local os_id os_codename os_version
+  os_id="unknown"
+  os_codename="unknown"
+  os_version="unknown"
+  if [[ -r /etc/os-release ]]; then
+    # shellcheck disable=SC1091
+    source /etc/os-release
+    os_id="${ID:-unknown}"
+    os_codename="${VERSION_CODENAME:-unknown}"
+    os_version="${VERSION_ID:-unknown}"
+  fi
+
+  case "$os_codename" in
+    bookworm)
+      echo "Platform: ${os_id} ${os_version} (${os_codename}) — supported baseline."
+      ;;
+    trixie)
+      echo "Platform: ${os_id} ${os_version} (${os_codename}) — compatibility candidate."
+      echo "Run preflight and smoke tests before production use."
+      ;;
+    *)
+      echo "WARNING: ${os_id} ${os_version} (${os_codename}) is outside declared support boundaries."
+      echo "Supported baseline: Debian/Pi OS Bookworm; compatibility candidate: Trixie."
+      ;;
+  esac
+}
+
+check_or_install_packages() {
+  local mode="$1"
+  local missing_packages=()
+  local pkg
+  local required_packages=(docker.io docker-compose-plugin bluez adb mosquitto-clients)
+
+  for pkg in "${required_packages[@]}"; do
+    if dpkg -s "$pkg" >/dev/null 2>&1; then
+      echo "Dependency present: $pkg"
+    else
+      missing_packages+=("$pkg")
+    fi
+  done
+
+  if [[ ${#missing_packages[@]} -eq 0 ]]; then
+    echo "All required packages are already installed."
+    return 0
+  fi
+
+  echo "Missing packages: ${missing_packages[*]}"
+  if [[ "$mode" == "preflight" ]]; then
+    echo "Preflight mode: install required packages before running install."
+    return 1
+  fi
+
+  export DEBIAN_FRONTEND=noninteractive
+  apt-get update
+  if ! apt-get install -y "${missing_packages[@]}"; then
+    echo "Failed to install required packages: ${missing_packages[*]}"
+    echo "Check package availability for your distro release and retry."
+    exit 1
+  fi
+}
+
+check_platform_support
+if [[ $PREFLIGHT_ONLY -eq 1 ]]; then
+  check_or_install_packages preflight
+  echo "Preflight checks complete. No changes were made."
+  exit 0
+else
+  check_or_install_packages install
+fi
+
 if [[ ! -f .env ]]; then
   echo "Missing .env. Copy .env.example to .env and update values."
   exit 1
 fi
 
-gen_secret() { tr -dc 'A-Za-z0-9!@#%^*_+=-' </dev/urandom | head -c 32; }
+gen_secret() { (set +o pipefail; LC_ALL=C tr -dc 'A-Za-z0-9!@#%^*_+=-' </dev/urandom | head -c 32); }
 set_env_var() {
   local key="$1" value="$2"
   sed -i -E "s|^${key}=.*$|${key}=${value}|" .env
@@ -124,9 +203,6 @@ if [[ ",$PROFILES," == *",zigbee,"* ]] && [[ ! -e "$ZIGBEE_DEVICE" ]]; then
   exit 1
 fi
 
-export DEBIAN_FRONTEND=noninteractive
-apt-get update
-apt-get install -y docker.io docker-compose-plugin bluez adb mosquitto-clients
 systemctl enable --now docker bluetooth
 
 require_docker_runtime
@@ -155,8 +231,12 @@ fi
 [[ -f zigbee2mqtt/configuration.yaml ]] || cp zigbee2mqtt/configuration.yaml.example zigbee2mqtt/configuration.yaml
 [[ -f mosquitto/config/mosquitto.conf ]] || cp mosquitto/config/mosquitto.conf.example mosquitto/config/mosquitto.conf
 
-if grep -Eq 'REPLACE_ME|replace_with_strong_|changeme|password' ha/secrets.yaml zigbee2mqtt/configuration.yaml; then
-  echo "Unsafe placeholders found in ha/secrets.yaml or zigbee2mqtt/configuration.yaml."
+secret_scan_files=(ha/secrets.yaml)
+if [[ ",$PROFILES," == *",zigbee,"* ]]; then
+  secret_scan_files+=(zigbee2mqtt/configuration.yaml)
+fi
+if grep -Eq 'REPLACE_ME|replace_with_strong_|changeme|password' "${secret_scan_files[@]}"; then
+  echo "Unsafe placeholders found in required secrets configuration files."
   echo "Update those files before starting services."
   exit 1
 fi
