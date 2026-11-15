@@ -1,3 +1,12 @@
+# Q8B execution status — 15 November 2026
+
+- Baseline reconciled from both audit archives and interactive transcript.
+- No open PRs at execution start; main `64c612e` inspected.
+- Repository implementation: in progress.
+- Host deployment: BLOCKED, no authorised runtime connection available.
+- Coordinator radio/firmware, MQTT event, backups/restores, cold boot: unverified.
+- Historical completion claims below apply to the old Pi implementation only.
+
 # Homeauto Finalization Checklist
 
 Authoritative tracker for implementation status, release readiness, roadmap,

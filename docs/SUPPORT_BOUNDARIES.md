@@ -1,3 +1,11 @@
+# Q8B / Debian 13 development target
+
+The Q8B is an application commissioning target, **not runtime qualified**.
+See [Q8B commissioning](platforms/Q8B.md) and the dated evidence ledger.
+The historical statements below describe the previous Pi release and are
+superseded where the Q8B runbook says otherwise. No kernel/firmware promotion
+is implied.
+
 # Support Boundaries
 
 This document defines what the homeauto stack supports, what it explicitly does
