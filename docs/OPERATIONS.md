@@ -37,5 +37,6 @@ Do not downgrade against a migrated database. Keep exact image/configuration/dat
 versions together. `./update.sh --pull-only` stages only the persisted version
 tags, without restarting; see the recovery runbook before changing them.
 
+See [consistent recovery and staged upgrades](RECOVERY.md) and [optional actions](ACTIONS.md).
 Backups/restoration and staged upgrades are required before production promotion.
 Record backup location and off-device copy, not secrets, in acceptance evidence.

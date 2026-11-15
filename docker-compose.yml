@@ -77,7 +77,7 @@ services:
       MARIADB_USER: homeauto
       MARIADB_PASSWORD_FILE: /run/secrets/db_user
       TZ: ${TZ:-Australia/Sydney}
-    secrets: [db_root, db_user]
+    secrets: [db_root, db_user, db_backup]
     volumes:
       - ${HOMEAUTO_DATA_DIR:-/srv/homeauto}/mariadb:/var/lib/mysql
     healthcheck:
@@ -126,3 +126,5 @@ secrets:
     file: ${HOMEAUTO_DATA_DIR:-/srv/homeauto}/private/db_root
   db_user:
     file: ${HOMEAUTO_DATA_DIR:-/srv/homeauto}/private/db_user
+  db_backup:
+    file: ${HOMEAUTO_DATA_DIR:-/srv/homeauto}/private/db_backup.cnf

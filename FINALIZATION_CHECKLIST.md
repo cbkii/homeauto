@@ -7,7 +7,7 @@ Updated 15 November 2026. Source implementation and physical acceptance are sepa
 | Q0 | Redacted audit and Q8B support/runbook | Implemented | Dated observations only |
 | Q1 | Read-only preflight and separated plan/prepare/apply | Implemented; tests in PR | Q8B preflight BLOCKED |
 | Q2 | HA/MQTT/SQLite plus secure opt-in Zigbee and optional SQL/extras | Implemented; tests in PR | Docker/radio/event BLOCKED |
-| Q3 | Private consistent recovery, staged upgrades, scoped bridge/monitoring | Pending | BLOCKED |
+| Q3 | Private consistent recovery, staged upgrades, scoped bridge | Implemented; failure tests and isolated DB integration in CI | Q8B restore BLOCKED |
 | Q4 | Useful opt-in sensor/ESPHome/TV samples | Pending | BLOCKED |
 | S37 | Debian 13/Trixie and Pi compatibility | Source validation target | Physical smoke required |
 

@@ -1,18 +1,38 @@
 [Unit]
-Description=Home Assistant Action Bridge (MQTT -> host scripts)
-After=network-online.target docker.service
-Wants=network-online.target docker.service
+Description=homeauto optional bounded MQTT action bridge
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=5
 
 [Service]
 Type=simple
-EnvironmentFile=/etc/ha-action-bridge.env
-ExecStartPre=/bin/sh -c 'for i in $(seq 1 30); do mosquitto_pub -h ${MQTT_HOST:-127.0.0.1} -p ${MQTT_PORT:-1883} -u "${MQTT_USER}" -P "${MQTT_PASS}" -t ha/bridge/health -m prestart >/dev/null 2>&1 && exit 0; sleep 2; done; echo "MQTT broker not reachable" >&2; exit 1'
-ExecStart=/usr/local/bin/ha-action-bridge.sh
+User=homeauto-actions
+Group=homeauto-actions
+WorkingDirectory=/var/lib/homeauto-actions
+EnvironmentFile=-/etc/homeauto/actions.env
+Environment=HOME=/var/lib/homeauto-actions
+ExecStart=/usr/bin/python3 /opt/homeauto/scripts/ha-action-bridge/bridge.py --config /etc/homeauto/actions.json
 Restart=on-failure
-RestartSec=5
+RestartSec=10s
+TimeoutStartSec=30s
+TimeoutStopSec=35s
+StateDirectory=homeauto-actions
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/homeauto-actions
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+KillMode=control-group
 StandardOutput=journal
 StandardError=journal
-NoNewPrivileges=true
 
 [Install]
 WantedBy=multi-user.target

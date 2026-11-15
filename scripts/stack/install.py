@@ -17,7 +17,7 @@ import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'lib'))
-from homeauto import PROFILES, REPO, atomic, compose, run, safe_root, state, owned_services  # noqa: E402
+from homeauto import PROFILES, REPO, atomic, compose, run, safe_root, state, owned_services, operation_lock  # noqa: E402
 
 LOG = logging.getLogger('homeauto')
 
@@ -73,9 +73,12 @@ def prepare(root: Path, profiles: list[str], device: str, adapter: str, bluetoot
             if os.geteuid() == 0:
                 os.chown(staging / name, uid, uid)
         credentials = {user: secrets.token_hex(24) for user in ['ha', 'zigbee', 'bridge', 'health', 'db_root', 'db_user']}
+        if 'actions' in profiles:
+            write(staging / 'actions.json', json.dumps(dict(mqtt=dict(host='127.0.0.1', port=1883, username='bridge', password=credentials['bridge']), tv={}, bluetooth={}), indent=2) + '\n')
         write(staging / 'secrets.json', json.dumps(credentials, indent=2) + '\n')
         for name in ['db_root', 'db_user']:
             write(staging / 'private' / name, credentials[name] + '\n')
+        write(staging / 'private/db_backup.cnf', '[client]\nuser=root\npassword=' + credentials['db_root'] + '\n')
         passwd = ''.join(user + ':' + password_hash(credentials[user]) + '\n'
                          for user in ['ha', 'zigbee', 'bridge', 'health'])
         write(staging / 'mosquitto/config/passwd', passwd, 0o640, 1883)
@@ -124,7 +127,7 @@ def prepare(root: Path, profiles: list[str], device: str, adapter: str, bluetoot
     return True
 
 
-def apply(root: Path) -> int:
+def _apply(root: Path) -> int:
     current = state(root)
     owned_services(root)  # Refuse project-name collisions before any up/down.
     command = [sys.executable, str(REPO / 'scripts/diagnostics/homeauto-preflight.py'),
@@ -161,6 +164,11 @@ def apply(root: Path) -> int:
             optional_failed = True
     LOG.info('Core healthy. UI onboarding, events, boot and recovery still require acceptance.')
     return 1 if optional_failed else 0
+
+
+def apply(root: Path) -> int:
+    with operation_lock(root):
+        return _apply(root)
 
 
 def main() -> int:
