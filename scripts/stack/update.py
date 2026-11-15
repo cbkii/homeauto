@@ -5,7 +5,7 @@ import subprocess
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'lib'))
-from homeauto import compose, run
+from homeauto import compose, run, owned_services
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--data-dir', type=Path, default=Path('/srv/homeauto'))
@@ -14,6 +14,7 @@ args = parser.parse_args()
 if not args.pull_only:
     parser.error('Use --pull-only to stage persisted tags. See staged-upgrade runbook before restart.')
 try:
+    owned_services(args.data_dir)
     result = run(compose(args.data_dir, 'pull'), timeout=600)
     print('SUCCESS: images staged; no containers restarted' if result.returncode == 0 else 'FAILED: image pull')
     sys.exit(result.returncode)

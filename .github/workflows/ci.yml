@@ -27,6 +27,8 @@ jobs:
           docker compose version
       - name: Source QA and all profile combinations
         run: ./scripts/qa.sh
+      - name: Real MQTT authentication and ACL checks
+        run: python3 tests/integration_broker.py
       - name: ARM64 and AMD64 image availability
         run: |
           mkdir -p artifacts

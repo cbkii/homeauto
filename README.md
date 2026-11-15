@@ -33,7 +33,7 @@ sudo ./scripts/stack/compose.sh --data-dir /srv/homeauto status
 
 The default invocation only prints a plan. `--prepare` creates protected files
 once in an **unoccupied** `/srv/homeauto`. Existing unrecognised directories are
-refused. `--apply` validates and starts the persisted project. Neither installs
+refused. `--apply` validates ownership and starts core first; unavailable optional services return 1 while core remains running. Neither installs
 or enables host packages/services. Docker must already start at boot.
 
 Open `http://<Q8B-LAN-IP>:8123`, create an owner account, then add MQTT under

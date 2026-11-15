@@ -17,7 +17,7 @@ import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'lib'))
-from homeauto import PROFILES, REPO, atomic, compose, run, safe_root, state  # noqa: E402
+from homeauto import PROFILES, REPO, atomic, compose, run, safe_root, state, owned_services  # noqa: E402
 
 LOG = logging.getLogger('homeauto')
 
@@ -126,20 +126,41 @@ def prepare(root: Path, profiles: list[str], device: str, adapter: str, bluetoot
 
 def apply(root: Path) -> int:
     current = state(root)
-    result = run([sys.executable, str(REPO / 'scripts/diagnostics/homeauto-preflight.py'),
-                  '--data-dir', str(root), '--profiles', ','.join(current['profiles']),
-                  '--zigbee-device', current.get('zigbee_device', '')], timeout=180)
+    owned_services(root)  # Refuse project-name collisions before any up/down.
+    command = [sys.executable, str(REPO / 'scripts/diagnostics/homeauto-preflight.py'),
+               '--data-dir', str(root)]
+    result = run(command, timeout=180)
     print(result.stdout, end='')
     if result.returncode not in {0, 1}:
-        LOG.error('Preflight blocked application; no containers started')
+        LOG.error('Core preflight blocked application; no containers started')
         return 2
-    for args in [('config', '--quiet'), ('up', '-d', '--wait', '--wait-timeout', '240')]:
+    for args in [('config', '--quiet'),
+                 ('up', '-d', '--wait', '--wait-timeout', '240', '--no-deps', 'homeassistant', 'mosquitto')]:
         result = run(compose(root, *args), timeout=300)
         if result.returncode:
-            LOG.error('Compose validation/start failed; inspect local logs, core may already be running')
+            LOG.error('Core validation/start failed; inspect local logs')
             return 2
-    LOG.info('Compose services healthy. Finish UI onboarding and hardware acceptance before promotion.')
-    return 0
+    optional_failed = False
+    selections = []
+    if 'mariadb' in current['profiles']:
+        selections.append(['mariadb'])
+    if 'extras' in current['profiles']:
+        selections.append(['esphome', 'nodered'])
+    if 'zigbee' in current['profiles']:
+        result = run(command + ['--profiles', 'zigbee', '--zigbee-device', current['zigbee_device']], timeout=180)
+        if result.returncode in {0, 1}:
+            selections.append(['zigbee2mqtt'])
+        else:
+            print(result.stdout, end='')
+            LOG.warning('Zigbee blocked; HA/MQTT core remains running')
+            optional_failed = True
+    for services in selections:
+        result = run(compose(root, 'up', '-d', '--wait', '--wait-timeout', '240', *services), timeout=300)
+        if result.returncode:
+            LOG.warning('Optional service unavailable; HA/MQTT core remains running')
+            optional_failed = True
+    LOG.info('Core healthy. UI onboarding, events, boot and recovery still require acceptance.')
+    return 1 if optional_failed else 0
 
 
 def main() -> int:

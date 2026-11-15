@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'lib'))
-from homeauto import run, safe_root, state  # noqa: E402
+from homeauto import run, safe_root, state, owned_services  # noqa: E402
 
 PORTS = {'homeassistant': 8123, 'mosquitto': 1883, 'zigbee': 8080,
          'mariadb': 3306, 'esphome': 6052, 'nodered': 1880}
@@ -36,8 +36,9 @@ def checks(facts: dict, profiles: set[str]) -> list[dict]:
         'Conflicting Debian/CE packages' if facts['mixed_packages'] else
         'Installed package names: ' + ', '.join(facts['packages']))
     for feature, available in facts['features'].items():
-        add('kernel-' + feature, 'PASS' if available == 'y' else 'WARN',
-            'Built-in' if available == 'y' else 'Module or unknown; actual Docker network test required')
+        add('kernel-' + feature, 'PASS' if available == 'y' else 'BLOCK' if available == 'n' else 'WARN',
+            'Built-in' if available == 'y' else 'Required feature disabled' if available == 'n' else
+            'Module or unknown; actual Docker network test required')
     add('storage', 'PASS' if facts['free_bytes'] >= 5 * 1024**3 else 'BLOCK',
         f"Available bytes on application filesystem: {facts['free_bytes']}")
     add('ownership', 'PASS' if facts['writable'] else 'WARN',
@@ -103,7 +104,8 @@ def collect(root: Path, serial: str) -> dict:
     config_file = Path('/boot') / ('config-' + platform.release())
     config = config_file.read_text() if config_file.is_file() else ''
     features = {key: next((line.partition('=')[2] for line in config.splitlines()
-                          if line.startswith('CONFIG_' + symbol + '=')), '?')
+                          if line.startswith('CONFIG_' + symbol + '=')),
+                         'n' if '# CONFIG_' + symbol + ' is not set' in config else '?')
                 for key, symbol in {'overlay': 'OVERLAY_FS', 'bridge': 'BRIDGE',
                                     'netfilter': 'NETFILTER', 'veth': 'VETH'}.items()}
     ntp = probe(['timedatectl', 'show', '-p', 'NTPSynchronized', '--value'])
@@ -128,12 +130,21 @@ def collect(root: Path, serial: str) -> dict:
             usb.append(device.name + ':' + (device / 'idVendor').read_text().strip() + ':' +
                        (device / 'idProduct').read_text().strip())
     managed = []
-    if (root / '.homeauto.json').exists():
-        marker = state(root)
-        result = probe(['docker', 'ps', '--filter', 'label=com.docker.compose.project=' + marker['project'],
-                        '--format', '{{.Label \"com.docker.compose.service\"}}'])
-        if result and result.returncode == 0:
-            managed = result.stdout.splitlines()
+    if (root / '.homeauto.json').exists() and ready:
+        managed = sorted(owned_services(root))
+        # fuser includes the container's host PID. Permit only an exact process
+        # listed by Docker for this project's Z2M container, never every holder.
+        if holder and holder.returncode == 0 and 'zigbee2mqtt' in managed:
+            marker = state(root)
+            cid = probe(['docker', 'ps', '--filter', 'label=com.docker.compose.project=' + marker['project'],
+                         '--filter', 'label=com.docker.compose.service=zigbee2mqtt', '--format', '{{.ID}}'])
+            if cid and cid.returncode == 0 and len(cid.stdout.splitlines()) == 1:
+                top = probe(['docker', 'top', cid.stdout.strip(), '-eo', 'pid'])
+                if top and top.returncode == 0:
+                    owners = set(holder.stdout.split())
+                    processes = set(top.stdout.split())
+                    if owners and owners <= processes:
+                        holder = None
     return dict(managed_services=managed, os=os_data.get('ID', 'unknown'), version=os_data.get('VERSION_ID', 'unknown'),
                 arch=platform.machine(), kernel=platform.release(), pages=os.sysconf('SC_PAGE_SIZE'),
                 cgroup2=Path('/sys/fs/cgroup/cgroup.controllers').exists(), docker_ready=ready,

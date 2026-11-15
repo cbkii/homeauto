@@ -103,9 +103,50 @@ class PreflightTests(unittest.TestCase):
         rows = preflight.checks(facts, set())
         self.assertEqual(sum(r['status'] == 'BLOCK' for r in rows), 3)
 
+    def test_disabled_kernel_feature_blocks(self):
+        facts = self.facts(); facts['features'] = {'bridge': 'n', 'veth': 'm'}
+        rows = {r['check']: r for r in preflight.checks(facts, set())}
+        self.assertEqual(rows['kernel-bridge']['status'], 'BLOCK')
+        self.assertEqual(rows['kernel-veth']['status'], 'WARN')
+
     def test_existing_managed_port_warns(self):
         facts = self.facts(); facts.update(ports={8123}, managed_services=['homeassistant'])
         self.assertNotIn('BLOCK', [r['status'] for r in preflight.checks(facts, set())])
+
+class LifecycleTests(unittest.TestCase):
+    def test_project_root_collision_is_rejected(self):
+        from unittest.mock import patch
+        import homeauto
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / 'app'
+            install.prepare(root, [], '', '', False, 'same-project', 'Australia/Sydney')
+            def fake(argv, **kwargs):
+                if argv[1] == 'ps':
+                    return subprocess.CompletedProcess(argv, 0, 'a' * 12 + '\n', '')
+                return subprocess.CompletedProcess(argv, 0, json.dumps({
+                    'com.docker.compose.project.config_files': '/other/compose.yaml',
+                    'com.docker.compose.project.working_dir': '/other',
+                    'com.docker.compose.service': 'homeassistant'}), '')
+            with patch.object(homeauto, 'run', side_effect=fake):
+                with self.assertRaises(ValueError):
+                    homeauto.owned_services(root)
+
+    def test_configured_but_absent_dongle_starts_core(self):
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / 'app'
+            install.prepare(root, ['zigbee'], '/dev/serial/by-id/absent', 'ember', False,
+                            'isolated-test', 'Australia/Sydney')
+            calls = []
+            def fake(argv, **kwargs):
+                calls.append(argv)
+                code = 2 if '--profiles' in argv else 0
+                return subprocess.CompletedProcess(argv, code, '', '')
+            with patch.object(install, 'owned_services', return_value=set()), patch.object(install, 'run', side_effect=fake):
+                self.assertEqual(install.apply(root), 1)
+            starts = [a for a in calls if 'up' in a]
+            self.assertEqual(len(starts), 1)
+            self.assertEqual(starts[0][-2:], ['homeassistant', 'mosquitto'])
 
 
 if __name__ == '__main__':

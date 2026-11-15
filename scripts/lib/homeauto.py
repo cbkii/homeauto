@@ -80,3 +80,26 @@ def compose(root: Path, *args: str) -> list[str]:
         if profile != 'actions':
             argv += ['--profile', profile]
     return argv + list(args)
+
+
+def owned_services(root: Path) -> set[str]:
+    """Refuse a Compose project already owned by another state root."""
+    data = state(root)
+    result = run(['docker', 'ps', '-a', '--filter',
+                  'label=com.docker.compose.project=' + data['project'], '--format', '{{.ID}}'])
+    if result.returncode:
+        raise ValueError('Cannot establish Compose project ownership')
+    services = set()
+    for container in result.stdout.splitlines():
+        if not re.fullmatch(r'[0-9a-f]{12,64}', container):
+            raise ValueError('Invalid container evidence')
+        inspected = run(['docker', 'inspect', '--format', '{{json .Config.Labels}}', container])
+        if inspected.returncode:
+            raise ValueError('Cannot inspect project ownership')
+        labels = json.loads(inspected.stdout)
+        files = labels.get('com.docker.compose.project.config_files', '').split(',')
+        directory = labels.get('com.docker.compose.project.working_dir', '')
+        if str(root / 'compose.yaml') not in files or directory != str(root):
+            raise ValueError('Compose project belongs to another application root; choose an unused project')
+        services.add(labels.get('com.docker.compose.service', ''))
+    return services

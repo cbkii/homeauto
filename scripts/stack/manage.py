@@ -5,7 +5,7 @@ import subprocess
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'lib'))
-from homeauto import compose, run
+from homeauto import compose, run, owned_services
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--data-dir', type=Path, default=Path('/srv/homeauto'))
@@ -14,6 +14,10 @@ args = parser.parse_args()
 commands = {'status': ['ps', '--all'], 'start': ['up', '-d', '--wait', '--wait-timeout', '240'],
             'stop': ['stop', '--timeout', '60'], 'config': ['config', '--quiet'], 'logs': ['logs', '--tail', '100']}
 try:
+    owned_services(args.data_dir)
+    if args.command == 'start':
+        from install import apply
+        sys.exit(apply(args.data_dir))
     if args.command == 'logs':
         # Logs are local-only; review for sensitive device identities before sharing.
         sys.exit(subprocess.call(compose(args.data_dir, *commands[args.command])))
