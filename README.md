@@ -1,120 +1,73 @@
-> **Q8B / Debian 13:** see [commissioning and acceptance](docs/platforms/Q8B.md).
-> Repository support is being implemented; hardware acceptance remains open.
+# homeauto
 
-# homeauto stack
+A portable Home Assistant **Container** stack for Debian 12 and Debian 13 ARM64 or AMD64,
+including the Radxa Dragon Q8B. Core: Home Assistant + authenticated Mosquitto.
+Zigbee2MQTT, MariaDB, ESPHome, Node-RED, Bluetooth and host actions are opt-in.
+New installations use SQLite. No HA OS/Supervisor or router replacement.
 
-Production-lean Home Assistant Container stack for Debian 12 / Raspberry Pi OS Bookworm.
-Managed with Docker Compose.
+**Q8B hardware acceptance is pending.** See [baseline](docs/platforms/Q8B_AUDIT_2026-11-15.md),
+[commissioning](docs/platforms/Q8B.md) and [acceptance](docs/SMOKE_TEST_RUNBOOK.md).
 
-## Services
+## First installation
 
-| Service | Description | Default port |
-|---|---|---|
-| Home Assistant | Smart home controller | 8123 |
-| Mosquitto | MQTT broker (auth required) | 1883 |
-| Zigbee2MQTT | Zigbee coordinator bridge + UI | 8080 |
-| ESPHome | ESP device dashboard + OTA workflows | 6052 |
-| Node-RED | Flow-based automation engine | 1880 |
-| MariaDB | Shared relational database (HA recorder + app workloads) | 3306 |
-
-**Host services (systemd):**
-- `ha-action-bridge` — host-side MQTT subscriber that executes ADB and Bluetooth helper scripts on behalf of Home Assistant
-
-## Quick start
+Run from this checkout; the scripts also work when invoked from another directory.
+No package installation, firewall reset or network change is performed.
 
 ```bash
-# 1. Configure
-cp .env.example .env && nano .env
-./system/zigbee-discover.sh   # get ZIGBEE_DEVICE path
-
-# 2. Install
-sudo ./install.sh
-# optional: include Zigbee + extras
-# sudo ./install.sh --with-all
-
-# 3. Open
-http://<host-ip>:8123
+./install.sh --plan
+python3 scripts/diagnostics/homeauto-preflight.py --format json
 ```
 
-See [docs/OPERATIONS.md](docs/OPERATIONS.md) for the full setup and maintenance guide.
+Exit codes: 0 ready, 1 warnings, 2 blocked, 3 evidence/tool error. Docker absent
+is a blocker for application start, not an invitation to replace containerd.
+Review [Docker package selection](docs/platforms/Q8B.md) first.
 
-## Documentation
-
-| Document | Purpose |
-|---|---|
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | How components fit together, action bridge design |
-| [docs/OPERATIONS.md](docs/OPERATIONS.md) | Install, update, uninstall, backup, day-to-day ops |
-| [docs/CONFIG_REFERENCE.md](docs/CONFIG_REFERENCE.md) | All configuration files and variables |
-| [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | Common problems and fixes |
-| [docs/SUPPORT_BOUNDARIES.md](docs/SUPPORT_BOUNDARIES.md) | Supported platforms, known limitations, HA Container vs HA OS |
-| [docs/SMOKE_TEST_RUNBOOK.md](docs/SMOKE_TEST_RUNBOOK.md) | Release smoke testing procedure |
-| [CHANGELOG.md](CHANGELOG.md) | Version history |
-| [FINALIZATION_CHECKLIST.md](FINALIZATION_CHECKLIST.md) | Implementation status, roadmap, release readiness |
-
-## Key design decisions
-
-- **Home Assistant Container** (not HA OS / Supervisor) — no add-on store.
-- **Host networking** (`network_mode: host`) for all containers — required for
-  LAN multicast and simplifies MQTT addressing.
-- **MQTT-based action bridge** — ADB and Bluetooth helper scripts run on the
-  host (not inside the HA container) and are triggered via MQTT publish.
-  See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for why this is necessary.
-- **Auth required** — Mosquitto requires credentials; no anonymous access.
-- **No WAN exposure** — no reverse proxy or port-forwarding automation included.
-- **Stable Zigbee path** — coordinator mapped via `/dev/serial/by-id/…` to
-  avoid symlink churn.
-- **Conservative image tracking** — Home Assistant `stable`, Mosquitto `2.x`,
-  Zigbee2MQTT `2.x` (major-pinned, not floating `latest`).
-- **Single shared DB baseline** — MariaDB is included for Home Assistant
-  recorder and optional app workloads to avoid multiple SQL backends.
-
-## Prerequisites
-
-- Debian 12 / Raspberry Pi OS Bookworm (64-bit) **or**
-  Debian 13 / Raspberry Pi OS Trixie (64-bit, compatibility candidate)
-- Internet access for package and image pulls
-- User with `sudo` access
-- Zigbee coordinator connected (only if enabling Zigbee profile)
-
-## Helper actions (ADB / Bluetooth)
-
-Helper scripts are **not** callable via HA `shell_command` — `shell_command`
-runs inside the container, where `adb` and `bluetoothctl` are not available.
-Instead, Home Assistant publishes MQTT messages and the host-side
-`ha-action-bridge` service executes the scripts.
-
-From an HA automation:
-
-```yaml
-action:
-  - action: mqtt.publish
-    data:
-      topic: ha/actions/tv_power
-      payload: "{{ states('input_text.android_tv_ip') }}"
-```
-
-Full topic/payload schema: [docs/ARCHITECTURE.md § MQTT action topics](docs/ARCHITECTURE.md#mqtt-action-topics-and-payloads)
-
-## Security defaults
-
-- MQTT requires authentication — `allow_anonymous false`.
-- ADB scripts enforce RFC1918 LAN-only IP targets.
-- Bluetooth scripts disable discoverable/pairable modes after use.
-- No internet-facing services or port forwarding configured.
-- Optional host firewall baseline: `scripts/security/firewall-setup.sh` (opt-in).
-- Optional scheduled backups: `scripts/stack/backup-schedule-install.sh` (opt-in).
-
-See [docs/SUPPORT_BOUNDARIES.md](docs/SUPPORT_BOUNDARIES.md) for the privilege
-model, service compatibility matrix, and hardening guidance.
-
-## Quality gates
+After backups and host prerequisites are established:
 
 ```bash
-./scripts/qa.sh
+sudo ./install.sh --prepare --data-dir /srv/homeauto
+sudo ./scripts/stack/compose.sh --data-dir /srv/homeauto config
+sudo ./install.sh --apply --data-dir /srv/homeauto
+sudo ./scripts/stack/compose.sh --data-dir /srv/homeauto status
 ```
 
-Runs `shellcheck` across all `*.sh` files and validates `docker compose config`.
+The default invocation only prints a plan. `--prepare` creates protected files
+once in an **unoccupied** `/srv/homeauto`. Existing unrecognised directories are
+refused. `--apply` validates and starts the persisted project. Neither installs
+or enables host packages/services. Docker must already start at boot.
 
-## Status and roadmap
+Open `http://<Q8B-LAN-IP>:8123`, create an owner account, then add MQTT under
+**Settings → Devices & services → Add integration → MQTT**. Broker `127.0.0.1`,
+port 1883, user `ha`. Read its password locally from the protected
+`/srv/homeauto/secrets.json`; do not paste it into logs or issues. ADB/TV and BLE
+can usually use native HA integrations after separate qualification.
 
-See [FINALIZATION_CHECKLIST.md](FINALIZATION_CHECKLIST.md).
+## Optional profiles
+
+Select profiles during preparation. Flags accumulate; `--profiles zigbee,extras`
+is equivalent to `--with-zigbee --with-extras`. `--with-mariadb` provides an
+optional SQL server; it does not change HA's recorder. An existing deployment
+requires a backed-up migration before changing its selections.
+
+For Zigbee confirm the physical SKU and firmware first, find the **exact**
+serial link locally, then supply `--zigbee-device` and `--zigbee-adapter ember`
+(for a verified compatible Silicon Labs radio) or `zstack` (verified TI radio).
+A CP210x USB bridge cannot identify the radio by itself. No firmware is flashed.
+Never pair into a replacement network before backing up an existing mesh.
+
+MQTT is published only on loopback by default. Zigbee2MQTT uses the private
+Compose network. Z2M, Node-RED and ESPHome dashboards are loopback only; use SSH
+forwarding (`ssh -L 8080:127.0.0.1:8080 USER@Q8B`). HA uses host networking for
+discovery. Existing host/LAN firewall rules remain the operator's responsibility.
+
+## Operations and recovery
+
+- [Operations](docs/OPERATIONS.md), [configuration](docs/CONFIG_REFERENCE.md).
+- [Legacy MariaDB migration](docs/LEGACY_MIGRATION.md): preserve history/config.
+- [Support and privilege boundaries](docs/SUPPORT_BOUNDARIES.md).
+- [Troubleshooting](docs/TROUBLESHOOTING.md).
+- `./scripts/qa.sh`: ShellCheck, syntax, Python tests, all Compose profiles.
+
+Uninstall stops/removes only this Compose project and always preserves state:
+`sudo ./uninstall.sh --yes --data-dir /srv/homeauto`. Roll back the matching
+configuration **and data** before using an earlier image after schema migration.

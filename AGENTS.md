@@ -2,7 +2,7 @@
 
 ## Purpose
 This repository provides a production-lean Home Assistant Container stack on
-**Debian 12 / Raspberry Pi OS Bookworm** using Docker Compose.
+**Debian 12/13 / Raspberry Pi OS (64-bit), including Q8B** using Docker Compose.
 
 Primary services and capabilities:
 - Home Assistant (Container edition — not HA OS)
@@ -28,7 +28,7 @@ Agents must optimize for:
 ## Scope
 
 ### In scope
-- Debian 12 / Raspberry Pi OS Bookworm (64-bit) compatibility.
+- Debian 12/13 / Raspberry Pi OS (64-bit) compatibility.
 - Docker Compose managed stack.
 - MQTT authentication by default.
 - Zigbee coordinator using stable `/dev/serial/by-id/` paths.
@@ -56,10 +56,10 @@ Agents must optimize for:
 
 ## Architecture summary
 
-- All containers use `network_mode: host`.
+- HA uses host networking for discovery; other services use bridge/loopback unless needed.
 - HA publishes MQTT messages to trigger ADB and Bluetooth actions.
 - `ha-action-bridge` (host systemd service) subscribes to `ha/actions/#` and calls helper scripts.
-- Helper scripts live in `scripts/adb/` and `scripts/bt/`, installed to `/usr/local/bin/ha-actions/` by `install.sh`.
+- Native HA TV integrations are preferred; the host action bridge is optional and must be separately qualified.
 
 See `docs/ARCHITECTURE.md` for the full diagram and action bridge design.
 

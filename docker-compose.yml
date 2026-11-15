@@ -1,120 +1,128 @@
+name: homeauto
+x-runtime: &runtime
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options:
+      max-size: 10m
+      max-file: "3"
+  stop_grace_period: 60s
+
 services:
-  mariadb:
-    image: mariadb:11
-    container_name: mariadb
+  homeassistant:
+    <<: *runtime
+    image: ghcr.io/home-assistant/home-assistant:2026.11.1
     network_mode: host
     environment:
-      - MYSQL_ROOT_PASSWORD=${MARIADB_ROOT_PASSWORD}
-      - MYSQL_DATABASE=${MARIADB_DATABASE}
-      - MYSQL_USER=${MARIADB_USER}
-      - MYSQL_PASSWORD=${MARIADB_PASSWORD}
-      - TZ=${TZ}
+      TZ: ${TZ:-Australia/Sydney}
     volumes:
-      - ./mariadb:/var/lib/mysql
+      - ${HOMEAUTO_DATA_DIR:-/srv/homeauto}/ha:/config
     healthcheck:
-      test: ["CMD-SHELL", "mariadb-admin ping -h 127.0.0.1 -u root -p$$MYSQL_ROOT_PASSWORD --silent"]
+      test: [CMD, python3, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8123/', timeout=5).close()"]
       interval: 30s
       timeout: 10s
-      retries: 5
-      start_period: 30s
-    restart: unless-stopped
+      retries: 6
+      start_period: 120s
 
-  homeassistant:
-    image: ghcr.io/home-assistant/home-assistant:stable
-    container_name: homeassistant
-    network_mode: host
-    privileged: true
+  mosquitto:
+    <<: *runtime
+    image: eclipse-mosquitto:2.0.22
+    ports:
+      - "${MQTT_BIND_ADDRESS:-127.0.0.1}:1883:1883"
     environment:
-      - TZ=${TZ}
+      XDG_CONFIG_HOME: /health
     volumes:
-      - ./ha:/config
-      - /run/dbus:/run/dbus:ro
+      - ${HOMEAUTO_DATA_DIR:-/srv/homeauto}/mosquitto/config:/mosquitto/config:ro
+      - ${HOMEAUTO_DATA_DIR:-/srv/homeauto}/mosquitto/data:/mosquitto/data
+      - ${HOMEAUTO_DATA_DIR:-/srv/homeauto}/mosquitto/health:/health:ro
+    healthcheck:
+      test: [CMD, mosquitto_pub, -h, 127.0.0.1, -t, homeauto/health, -m, ok]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  zigbee2mqtt:
+    <<: *runtime
+    profiles: ["zigbee"]
+    image: ghcr.io/koenkk/zigbee2mqtt:2.14.3
     depends_on:
-      mariadb:
-        condition: service_healthy
       mosquitto:
         condition: service_healthy
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - ${HOMEAUTO_DATA_DIR:-/srv/homeauto}/zigbee2mqtt:/app/data
+      - /run/udev:/run/udev:ro
+    devices:
+      - ${ZIGBEE_DEVICE:-/dev/null}:/dev/zigbee
+    environment:
+      TZ: ${TZ:-Australia/Sydney}
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:8123/ -o /dev/null"]
+      test: [CMD, node, -e, "require('http').get('http://127.0.0.1:8080/',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
       interval: 30s
       timeout: 10s
       retries: 5
       start_period: 90s
-    restart: unless-stopped
 
-  mosquitto:
-    image: eclipse-mosquitto:2
-    container_name: mosquitto
-    network_mode: host
+  mariadb:
+    <<: *runtime
+    profiles: ["mariadb"]
+    image: mariadb:11.8.3
+    ports:
+      - "127.0.0.1:3306:3306"
     environment:
-      - MQTT_USER=${MQTT_USER}
-      - MQTT_PASS=${MQTT_PASS}
+      MARIADB_ROOT_PASSWORD_FILE: /run/secrets/db_root
+      MARIADB_DATABASE: homeauto
+      MARIADB_USER: homeauto
+      MARIADB_PASSWORD_FILE: /run/secrets/db_user
+      TZ: ${TZ:-Australia/Sydney}
+    secrets: [db_root, db_user]
     volumes:
-      - ./mosquitto/config:/mosquitto/config
-      - ./mosquitto/data:/mosquitto/data
-      - ./mosquitto/log:/mosquitto/log
+      - ${HOMEAUTO_DATA_DIR:-/srv/homeauto}/mariadb:/var/lib/mysql
     healthcheck:
-      test: ["CMD-SHELL", "mosquitto_pub -h 127.0.0.1 -p 1883 -u $$MQTT_USER -P $$MQTT_PASS -t ha/health -m ok"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
-    restart: unless-stopped
-
-  zigbee2mqtt:
-    profiles: ["zigbee"]
-    image: koenkk/zigbee2mqtt:2
-    container_name: zigbee2mqtt
-    network_mode: host
-    depends_on:
-      mosquitto:
-        condition: service_healthy
-    volumes:
-      - ./zigbee2mqtt:/app/data
-      - /run/udev:/run/udev:ro
-    devices:
-      - ${ZIGBEE_DEVICE}:/dev/zigbee
-    environment:
-      - TZ=${TZ}
-    healthcheck:
-      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/ 2>&1"]
+      test: [CMD, healthcheck.sh, --connect, --innodb_initialized]
       interval: 30s
       timeout: 10s
       retries: 5
       start_period: 60s
-    restart: unless-stopped
 
   esphome:
+    <<: *runtime
     profiles: ["extras"]
-    image: ghcr.io/esphome/esphome:stable
-    container_name: esphome
+    image: ghcr.io/esphome/esphome:2026.10.2
     network_mode: host
     environment:
-      - TZ=${TZ}
+      TZ: ${TZ:-Australia/Sydney}
     volumes:
-      - ./esphome:/config
-    command: ["dashboard", "/config", "--address", "0.0.0.0", "--port", "6052"]
+      - ${HOMEAUTO_DATA_DIR:-/srv/homeauto}/esphome:/config
+    command: [dashboard, /config, --address, 127.0.0.1, --port, "6052"]
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:6052/ -o /dev/null"]
+      test: [CMD, python3, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:6052/', timeout=5).close()"]
       interval: 30s
       timeout: 10s
       retries: 5
       start_period: 60s
-    restart: unless-stopped
 
   nodered:
+    <<: *runtime
     profiles: ["extras"]
-    image: nodered/node-red:4
-    container_name: nodered
-    network_mode: host
+    image: nodered/node-red:4.1.1
+    ports:
+      - "127.0.0.1:1880:1880"
     environment:
-      - TZ=${TZ}
+      TZ: ${TZ:-Australia/Sydney}
     volumes:
-      - ./nodered:/data
+      - ${HOMEAUTO_DATA_DIR:-/srv/homeauto}/nodered:/data
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:1880/ -o /dev/null"]
+      test: [CMD, node, -e, "require('http').get('http://127.0.0.1:1880/',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 45s
-    restart: unless-stopped
+      start_period: 60s
+
+secrets:
+  db_root:
+    file: ${HOMEAUTO_DATA_DIR:-/srv/homeauto}/private/db_root
+  db_user:
+    file: ${HOMEAUTO_DATA_DIR:-/srv/homeauto}/private/db_user

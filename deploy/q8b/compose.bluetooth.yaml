@@ -1,0 +1,6 @@
+# Opt in only after BlueZ/controller qualification; core does not need this.
+services:
+  homeassistant:
+    cap_add: [NET_ADMIN, NET_RAW]
+    volumes:
+      - /run/dbus:/run/dbus:ro

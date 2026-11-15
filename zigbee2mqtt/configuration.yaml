@@ -1,12 +1,15 @@
-homeassistant: true
-
+# Documentation template only. install.sh --prepare writes a protected configuration.
+# adapter and credentials are supplied after explicit coordinator identification.
+homeassistant:
+  enabled: true
+frontend:
+  enabled: true
+  port: 8080
 mqtt:
-  server: mqtt://127.0.0.1
-  user: REPLACE_ME
-  password: REPLACE_ME
-
+  server: mqtt://mosquitto:1883
 serial:
   port: /dev/zigbee
-
-frontend: true
-permit_join: false
+advanced:
+  network_key: GENERATE
+  pan_id: GENERATE
+  ext_pan_id: GENERATE

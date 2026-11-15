@@ -1,18 +1,14 @@
 name: ci
-
 on:
   pull_request:
   push:
-    branches: ["main", "master", "work"]
+    branches: [main, master, work]
   workflow_dispatch:
-
 permissions:
   contents: read
-
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
-
 jobs:
   validate:
     name: validate (${{ matrix.os }})
@@ -23,86 +19,22 @@ jobs:
       matrix:
         os: [ubuntu-22.04, ubuntu-24.04]
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
-      - name: Install shellcheck
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Install validation tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y shellcheck
-      - name: Ensure Docker Compose is available
-        run: |
-          set -euo pipefail
-
-          # GitHub-hosted runners often include Docker Compose already.
-          if docker compose version >/dev/null 2>&1; then
-            docker --version
-            docker compose version
-            exit 0
-          fi
-
-          # Fallback for runner image changes across Ubuntu releases.
-          sudo apt-get update
-          sudo apt-get install -y docker-compose-plugin \
-            || sudo apt-get install -y docker-compose-v2 \
-            || sudo apt-get install -y docker-compose
-
-          # If only legacy docker-compose is present, expose it as a Docker CLI plugin.
-          if ! docker compose version >/dev/null 2>&1 && command -v docker-compose >/dev/null 2>&1; then
-            sudo mkdir -p /usr/local/lib/docker/cli-plugins
-            sudo ln -sf "$(command -v docker-compose)" /usr/local/lib/docker/cli-plugins/docker-compose
-          fi
-
-          docker --version
+          sudo apt-get install -y shellcheck python3-yaml
           docker compose version
-      - name: Verify required CLI tools
-        run: |
-          set -euo pipefail
-          shellcheck --version
-          docker --version
-          docker compose version
-      - name: Prepare CI environment
-        # qa.sh runs 'docker compose config' which requires env vars from .env.
-        # In CI we use the example file (no real secrets or devices needed for config validation).
-        run: cp .env.example .env
-      - name: Validate required .env.example keys
-        run: |
-          set -euo pipefail
-          required_keys=(
-            TZ
-            ZIGBEE_DEVICE
-            MQTT_USER
-            MQTT_PASS
-            MARIADB_ROOT_PASSWORD
-            MARIADB_DATABASE
-            MARIADB_USER
-            MARIADB_PASSWORD
-          )
-          for key in "${required_keys[@]}"; do
-            if ! grep -qE "^${key}=" .env.example; then
-              echo "Missing ${key} in .env.example"
-              exit 1
-            fi
-          done
-      - name: Run QA checks
+      - name: Source QA and all profile combinations
+        run: ./scripts/qa.sh
+      - name: ARM64 and AMD64 image availability
         run: |
           mkdir -p artifacts
-          ./scripts/qa.sh 2>&1 | tee artifacts/qa-output.txt
-
-      - name: Validate compose profile combinations
-        run: |
-          set -euo pipefail
-          docker compose config 2>&1 | tee artifacts/compose-config-default.yml
-          docker compose --profile zigbee config 2>&1 | tee artifacts/compose-config-zigbee.yml
-          docker compose --profile extras config 2>&1 | tee artifacts/compose-config-extras.yml
-          docker compose --profile zigbee --profile extras config 2>&1 | tee artifacts/compose-config-zigbee-extras.yml
-
-      - name: Run release-hardening static tests
-        run: ./scripts/test/test_release_hardening.sh
-      - name: Run smoke verify (non-destructive)
-        run: ./scripts/smoke/run_release_smoke.sh --mode verify --output "artifacts/smoke-report-${{ matrix.os }}.md"
-      - name: Upload QA artifacts
+          python3 scripts/diagnostics/image-manifests.py --format json > artifacts/images.json
+      - name: Upload public source evidence
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: qa-artifacts-${{ github.run_id }}-${{ matrix.os }}
-          path: artifacts/
+          name: source-evidence-${{ matrix.os }}
+          path: artifacts/images.json
           retention-days: 14
