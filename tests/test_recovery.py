@@ -128,3 +128,16 @@ class RecoveryTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+class TransitionalStateTests(unittest.TestCase):
+    def test_transitional_states_never_publish_even_in_offline_mode(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / 'app'
+            install.prepare(root, [], '', '', False, 'transition-test', 'Australia/Sydney')
+            for status in ['restarting', 'paused', 'removing']:
+                runtime = FakeRuntime()
+                runtime.rows = lambda: [dict(Service='homeassistant', State=status)]
+                for offline in [False, True]:
+                    with self.assertRaises(ValueError):
+                        create_backup(root, Path(temp) / 'backups', runtime=runtime, offline=offline)
+            self.assertFalse((Path(temp) / 'backups').exists())

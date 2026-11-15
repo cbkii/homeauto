@@ -111,6 +111,25 @@ class Dispatcher:
                 self.pending.task_done()
 
 
+def make_client(config, dispatcher, mqtt):
+    client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, protocol=mqtt.MQTTv5)
+    client.username_pw_set(config['mqtt']['username'], config['mqtt']['password'])
+    client.will_set('homeauto/bridge/availability', 'offline', qos=1, retain=True)
+    def connected(connection, userdata, flags, reason, properties):
+        if reason == 0:
+            connection.subscribe('ha/actions/#', options=mqtt.SubscribeOptions(qos=1, retainAsPublished=True))
+            connection.publish('homeauto/bridge/availability', 'online', qos=1, retain=True)
+    def message(connection, userdata, item):
+        try:
+            dispatcher.receive(item.topic, item.payload, item.retain)
+        except (ValueError, UnicodeError, TypeError, queue.Full):
+            LOG.warning('Action rejected; topic/payload/credentials suppressed')
+    client.on_connect = connected
+    client.on_message = message
+    client.reconnect_delay_set(min_delay=2, max_delay=30)
+    return client
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--config', type=Path, default=Path('/etc/homeauto/actions.json'))
@@ -123,21 +142,7 @@ def main():
             return 0
         import paho.mqtt.client as mqtt
         dispatcher = Dispatcher(config)
-        client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
-        client.username_pw_set(config['mqtt']['username'], config['mqtt']['password'])
-        client.will_set('homeauto/bridge/availability', 'offline', qos=1, retain=True)
-        def connected(connection, userdata, flags, reason, properties):
-            if reason == 0:
-                connection.subscribe('ha/actions/#', qos=1)
-                connection.publish('homeauto/bridge/availability', 'online', qos=1, retain=True)
-        def message(connection, userdata, item):
-            try:
-                dispatcher.receive(item.topic, item.payload, item.retain)
-            except (ValueError, UnicodeError, TypeError, queue.Full):
-                LOG.warning('Action rejected; topic/payload/credentials suppressed')
-        client.on_connect = connected
-        client.on_message = message
-        client.reconnect_delay_set(min_delay=2, max_delay=30)
+        client = make_client(config, dispatcher, mqtt)
         threading.Thread(target=dispatcher.worker, daemon=True).start()
         client.connect_async(config['mqtt'].get('host', '127.0.0.1'), config['mqtt'].get('port', 1883), keepalive=30)
         client.loop_forever(retry_first_connection=True)

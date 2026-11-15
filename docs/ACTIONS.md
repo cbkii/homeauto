@@ -8,7 +8,7 @@ dedicated MQTT bridge account and empty target allowlists. Edit it locally:
 `tv` maps friendly names to private IPv4 `host`, `port` (default 5555), and an
 allowlist of `packages`; `bluetooth` maps names to exact MACs. Unknown targets,
 packages, keys, expired/replayed/retained commands and payloads >512 bytes are
-rejected. One worker and a 16-item queue bound concurrency. Commands use fixed
+rejected. MQTTv5 retain-as-published preserves the retained flag even on live delivery. One worker and a 16-item queue bound concurrency. Commands use fixed
 argv with timeouts, no shell or raw command execution; logs omit payload/targets.
 Pairing/PIN automation and the former plain-text protocol are intentionally
 removed. Re-authorise ADB as the dedicated user; existing root ADB keys are not

@@ -47,7 +47,11 @@ def main():
             prior = (args.data_dir / 'compose.yaml').read_text()
             atomic(args.data_dir / 'compose.previous.yaml', prior)
             atomic(args.data_dir / 'compose.yaml', candidate)
-            result = run(compose(args.data_dir, 'pull'), timeout=600)
+            try:
+                result = run(compose(args.data_dir, 'pull'), timeout=600)
+            except (OSError, subprocess.TimeoutExpired):
+                atomic(args.data_dir / 'compose.yaml', prior)
+                raise
             if result.returncode:
                 # No services changed; restoring just the old config is still safe here.
                 atomic(args.data_dir / 'compose.yaml', prior)

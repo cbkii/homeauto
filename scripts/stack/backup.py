@@ -56,7 +56,7 @@ class Runtime:
         if not services:
             return
         result = run(compose(self.root, 'stop', '--timeout', '60', *services), timeout=120)
-        if result.returncode or any(r['Service'] in services and r['State'] == 'running' for r in self.rows()):
+        if result.returncode or any(r['State'] not in {'exited', 'created'} for r in self.rows()):
             raise RuntimeError('Writers did not stop; no snapshot taken')
 
     def start(self, services: list[str]):
@@ -135,6 +135,8 @@ def create_backup(root: Path, destination: Path, *, runtime=None, offline=False,
     with nullcontext() if lock_held else operation_lock(root):
         runtime = runtime or Runtime(root)
         rows = runtime.rows()
+        if any(r['State'] not in {'running', 'exited', 'created'} for r in rows):
+            raise ValueError('Transitional/restarting/paused container; establish stable service state first')
         running = sorted(r['Service'] for r in rows if r['State'] == 'running')
         if offline and running:
             raise ValueError('Offline backup requires every project container stopped')
