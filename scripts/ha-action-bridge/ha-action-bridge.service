@@ -6,7 +6,7 @@ Wants=network-online.target docker.service
 [Service]
 Type=simple
 EnvironmentFile=/etc/ha-action-bridge.env
-ExecStartPre=/bin/sh -c 'for i in $(seq 1 30); do mosquitto_pub -h ${MQTT_HOST:-127.0.0.1} -p ${MQTT_PORT:-1883} -u "${MQTT_USER}" -P "${MQTT_PASS}" -t ha/bridge/health -m prestart >/dev/null 2>&1 && exit 0; sleep 2; done; echo "MQTT broker not reachable" >&2; exit 1'
+ExecStartPre=/bin/sh -c 'for i in $(seq 1 30); do mosquitto_pub -h ${MQTT_HOST:-127.0.0.1} -p ${MQTT_PORT:-1883} -u "${MQTT_USER}" -P "${MQTT_PASS}" -t homeauto/bridge/health -m prestart >/dev/null 2>&1 && exit 0; sleep 2; done; echo "MQTT broker not reachable" >&2; exit 1'
 ExecStart=/usr/local/bin/ha-action-bridge.sh
 Restart=on-failure
 RestartSec=5

@@ -1,18 +1,1 @@
-services:
-  mariadb:
-    image: mariadb:11.8.3
-
-  homeassistant:
-    image: ghcr.io/home-assistant/home-assistant:2026.5.3
-
-  esphome:
-    image: ghcr.io/esphome/esphome:2026.5.2
-
-  mosquitto:
-    image: eclipse-mosquitto:2.0.22
-
-  nodered:
-    image: nodered/node-red:4.1.1
-
-  zigbee2mqtt:
-    image: koenkk/zigbee2mqtt:2.8.0
+services: {}

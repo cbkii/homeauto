@@ -1,5 +1,11 @@
 .env
 ha/secrets.yaml
+ha/.storage/
+ha/*.db*
 mosquitto/config/passwd
-
 artifacts/
+backups/
+__pycache__/
+*.pyc
+.homeauto.json
+secrets.json

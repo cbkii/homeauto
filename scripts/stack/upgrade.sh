@@ -1,12 +1,6 @@
 #!/usr/bin/env bash
+# Stage persisted image tags only. Restarting onto new images requires a verified
+# backup and the staged-upgrade procedure; this helper never restarts services.
 set -euo pipefail
-
-SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-ROOT_DIR="$(cd -- "$SCRIPT_DIR/../.." && pwd)"
-
-cd "$ROOT_DIR"
-
-sudo ./install.sh --no-start
-./update.sh --restart
-
-echo "Upgrade helper completed."
+ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
+exec python3 "$ROOT_DIR/scripts/stack/update.py" --pull-only "$@"
