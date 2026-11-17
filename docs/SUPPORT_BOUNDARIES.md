@@ -5,6 +5,13 @@ The Radxa Dragon Q8B is the primary commissioning target. No target has current
 hardware sign-off from this Work session. [Q8B evidence](platforms/Q8B_AUDIT_2026-11-15.md)
 is dated observation, not a runtime test of these changes.
 
+Raspberry Pi OS 64-bit (Bookworm/Trixie) is a source-validation target on the same
+terms as Debian 12/13 and still needs physical smoke before sign-off. Existing
+Pi-era deployments are not converted: they stay on their original checkout until
+the explicit [legacy migration](LEGACY_MIGRATION.md) passes, which preserves
+MariaDB history. The previous Pi 5 / Trixie compatibility gate (physical smoke on
+the target) remains in force; the Q8B runbook adds gates and supersedes none.
+
 Home Assistant Container requires Docker Engine >=23 and Compose. Standard
 system Docker is the initial target; rootless/userns-remapped daemon, alternate
 architectures and custom integrations need permission/runtime qualification.
