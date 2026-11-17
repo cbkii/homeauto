@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import argparse
 import base64
+import contextlib
+import fcntl
 import hashlib
 import json
 import logging
@@ -48,11 +50,82 @@ def zigbee_first_start(root: Path) -> bool:
     return not ((data / 'coordinator_backup.json').exists() or (data / 'database.db').exists())
 
 
+def validate_zigbee(device: str, adapter: str, zigbee_network: str, zigbee_rtscts: bool | None):
+    # Whole-path allowlist: the value is written into .env, so a newline could inject
+    # another Compose variable (e.g. override MQTT_BIND_ADDRESS).
+    if not re.fullmatch(r'/dev/serial/by-id/[A-Za-z0-9._:+@-]{1,200}', device) or adapter not in {'ember', 'zstack'}:
+        raise ValueError('Zigbee needs a stable by-id path and explicitly verified ember/zstack variant')
+    if zigbee_network != 'new':
+        raise ValueError(NETWORK_ACK)
+    if zigbee_rtscts is None:
+        raise ValueError('Zigbee needs --zigbee-rtscts true|false from the adapter vendor documentation '
+                         '(SMLIGHT SLZB-07/MGx: true; SLZB-07pX: false; see docs/ZIGBEE.md)')
+
+
+def z2m_settings(password: str, adapter: str, rtscts: bool) -> str:
+    z2m = dict(version=Z2M_SETTINGS_VERSION, homeassistant={'enabled': True}, frontend={'enabled': True, 'port': 8080},
+               mqtt={'server': 'mqtt://mosquitto:1883', 'user': 'zigbee', 'password': password},
+               serial={'port': '/dev/zigbee', 'adapter': adapter, 'rtscts': rtscts},
+               advanced={'network_key': list(secrets.token_bytes(16)),
+                         'pan_id': secrets.randbelow(0xFFFE) + 1, 'ext_pan_id': list(secrets.token_bytes(8))},
+               availability={'enabled': True})
+    # JSON is a YAML subset; no template expansion or Python YAML dependency.
+    return json.dumps(z2m, indent=2) + '\n'
+
+
+@contextlib.contextmanager
+def root_lock(root: Path):
+    """Same flock file as the lifecycle tools' operation lock, so they exclude each other."""
+    fd = os.open(root / '.operation.lock', os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+    try:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            raise ValueError('Another homeauto lifecycle operation is active') from exc
+        yield
+    finally:
+        os.close(fd)
+
+
+def add_zigbee(root: Path, current: dict, device: str, adapter: str, zigbee_network: str,
+               zigbee_rtscts: bool | None) -> bool:
+    """Additive profile: an existing root already holds the zigbee broker account and ACL.
+
+    Writes Z2M settings, then the .env device line, then the marker (commit point). A crash
+    before the marker leaves Zigbee unselected and the step safely repeatable. Refused once
+    Z2M has ever run in this root, so a formed network is never overwritten.
+    """
+    validate_zigbee(device, adapter, zigbee_network, zigbee_rtscts)
+    with root_lock(root):
+        if not zigbee_first_start(root):
+            raise ValueError('Zigbee2MQTT has already run in this root; network settings are never regenerated')
+        password = json.loads((root / 'secrets.json').read_text())['zigbee']
+        if not re.fullmatch(r'[0-9a-f]{48}', password):
+            raise ValueError('Existing zigbee broker credential unreadable')
+        acl = (root / 'mosquitto/config/acl').read_text()
+        if 'user zigbee\ntopic readwrite zigbee2mqtt/#' not in acl:
+            raise ValueError('Existing broker ACL lacks the zigbee account; use a new root')
+        env = (root / '.env').read_text().splitlines()
+        if sum(line.startswith('ZIGBEE_DEVICE=') for line in env) != 1:
+            raise ValueError('Unexpected .env layout; refusing to edit it')
+        write(root / 'zigbee2mqtt/configuration.yaml', z2m_settings(password, adapter, zigbee_rtscts))
+        write(root / '.env', '\n'.join(f'ZIGBEE_DEVICE={device}' if line.startswith('ZIGBEE_DEVICE=') else line
+                                       for line in env) + '\n')
+        marker = dict(current, profiles=sorted(set(current['profiles']) | {'zigbee'}), zigbee_device=device,
+                      zigbee_adapter=adapter, zigbee_network=zigbee_network, zigbee_rtscts=zigbee_rtscts)
+        write(root / '.homeauto.json', json.dumps(marker, indent=2) + '\n')
+    LOG.info('Zigbee added to existing root; HA/MQTT state and credentials unchanged. Run --apply to start it')
+    return True
+
+
 def prepare(root: Path, profiles: list[str], device: str, adapter: str, bluetooth: bool,
             project: str, timezone: str, zigbee_network: str = '', zigbee_rtscts: bool | None = None) -> bool:
     safe_root(root)
     if root.exists():
         current = state(root)
+        if (set(profiles) - set(current['profiles']) == {'zigbee'} and set(current['profiles']) <= set(profiles)
+                and current.get('bluetooth') == bluetooth):
+            return add_zigbee(root, current, device, adapter, zigbee_network, zigbee_rtscts)
         if sorted(current['profiles']) != sorted(profiles) or current.get('bluetooth') != bluetooth:
             raise ValueError('Profile changes require a separate backed-up deployment; rerun with original selectors')
         if device and device != current.get('zigbee_device'):
@@ -68,15 +141,7 @@ def prepare(root: Path, profiles: list[str], device: str, adapter: str, bluetoot
     if not root.parent.is_dir():
         raise ValueError('Application parent must already exist')
     if 'zigbee' in profiles:
-        # Whole-path allowlist: the value is written into .env, so a newline could inject
-        # another Compose variable (e.g. override MQTT_BIND_ADDRESS).
-        if not re.fullmatch(r'/dev/serial/by-id/[A-Za-z0-9._:+@-]{1,200}', device) or adapter not in {'ember', 'zstack'}:
-            raise ValueError('Zigbee needs a stable by-id path and explicitly verified ember/zstack variant')
-        if zigbee_network != 'new':
-            raise ValueError(NETWORK_ACK)
-        if zigbee_rtscts is None:
-            raise ValueError('Zigbee needs --zigbee-rtscts true|false from the adapter vendor documentation '
-                             '(SMLIGHT SLZB-07/MGx: true; SLZB-07pX: false; see docs/ZIGBEE.md)')
+        validate_zigbee(device, adapter, zigbee_network, zigbee_rtscts)
     elif zigbee_network or zigbee_rtscts is not None:
         raise ValueError('--zigbee-network/--zigbee-rtscts apply only to the zigbee profile')
     if not re.fullmatch(r'[a-z][a-z0-9_-]{2,40}', project):
@@ -120,14 +185,8 @@ def prepare(root: Path, profiles: list[str], device: str, adapter: str, bluetoot
         write(staging / 'ha/scripts.yaml', '{}\n')
         write(staging / 'ha/scenes.yaml', '[]\n')
         if 'zigbee' in profiles:
-            z2m = dict(version=Z2M_SETTINGS_VERSION, homeassistant={'enabled': True}, frontend={'enabled': True, 'port': 8080},
-                       mqtt={'server': 'mqtt://mosquitto:1883', 'user': 'zigbee', 'password': credentials['zigbee']},
-                       serial={'port': '/dev/zigbee', 'adapter': adapter, 'rtscts': zigbee_rtscts},
-                       advanced={'network_key': list(secrets.token_bytes(16)),
-                                 'pan_id': secrets.randbelow(0xFFFE) + 1, 'ext_pan_id': list(secrets.token_bytes(8))},
-                       availability={'enabled': True})
-            # JSON is a YAML subset; no template expansion or Python YAML dependency.
-            write(staging / 'zigbee2mqtt/configuration.yaml', json.dumps(z2m, indent=2) + '\n')
+            write(staging / 'zigbee2mqtt/configuration.yaml',
+                  z2m_settings(credentials['zigbee'], adapter, zigbee_rtscts))
         write(staging / '.env', f'HOMEAUTO_DATA_DIR={root}\nTZ={timezone}\nMQTT_BIND_ADDRESS=127.0.0.1\nZIGBEE_DEVICE={device or "/dev/null"}\n')
         write(staging / 'compose.yaml', (REPO / 'docker-compose.yml').read_text())
         write(staging / 'compose.bluetooth.yaml', (REPO / 'deploy/q8b/compose.bluetooth.yaml').read_text())

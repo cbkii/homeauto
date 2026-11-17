@@ -57,6 +57,14 @@ sudo ./install.sh --prepare --data-dir /srv/homeauto --with-zigbee \
   --zigbee-rtscts <true|false> --zigbee-network new
 ```
 
+The same command adds Zigbee to an existing core root (for example after HA
+onboarding). It writes only the Z2M settings, the `.env` device line and the
+marker, using the broker account every root already has; HA, MQTT state and
+credentials are untouched and running containers are not recreated. It is refused
+once Zigbee2MQTT has ever run in that root (`coordinator_backup.json` or
+`database.db` present), so a formed network is never regenerated. Other profile
+changes (removing Zigbee, adding MariaDB) still need a separate backed-up root.
+
 Roots prepared before this decision existed are blocked from a Zigbee first start
 (core still starts) until re-prepared in a new root or adopted as below.
 
