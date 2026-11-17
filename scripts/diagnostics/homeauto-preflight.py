@@ -223,7 +223,9 @@ def main() -> int:
         report = dict(schema=1, exit_code=code, checks=rows)
     except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired) as exc:
         # Do not include external command output or private input in errors.
-        report = dict(schema=1, exit_code=3, checks=[dict(check='evidence', status='ERROR', detail=type(exc).__name__)])
+        # ValueError/RuntimeError text is our own fixed wording; external output stays suppressed.
+        detail = str(exc) if type(exc) in {ValueError, RuntimeError} else type(exc).__name__
+        report = dict(schema=1, exit_code=3, checks=[dict(check='evidence', status='ERROR', detail=detail)])
         code = 3
     if args.format == 'json':
         print(json.dumps(report, indent=2))

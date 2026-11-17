@@ -92,3 +92,21 @@ for missed runs; account for brief HA outage. Root is explicit because Docker
 socket access and preserving ownership are root-equivalent operations. The unit
 restricts writes to state/backups and logs to journald. Removal:
 `sudo bash scripts/stack/backup-schedule-remove.sh --apply` (backups retained).
+
+## Verified off-device copy
+
+```bash
+sudo python3 scripts/stack/offdevice.py --data-dir /srv/homeauto \
+  --backup-dir /srv/homeauto-backups --target /mnt/<mounted-other-disk>
+```
+
+Copies the archive named in `last-success.json` to `<target>/homeauto-backups/`
+(0700/0600), re-verifies every hash on the copy, then records
+`last-offdevice.json`. It refuses a target on the same filesystem **or the same
+physical disk** (another NVMe partition is not off-device), RAM-backed targets and
+`/media/mediasmb` (private archives must not be exposed over SMB). It never deletes
+local archives; it prunes only older copies on the target, after a new copy has
+verified. `backup.py --copy-to` runs the same step after a successful backup and
+exits `4` if the local archive is good but the copy failed. Mount the target first;
+the backup unit uses `RequiresMountsFor` so a missing mount fails instead of
+filling an empty directory.
