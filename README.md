@@ -1,3 +1,6 @@
+> **Q8B / Debian 13:** see [commissioning and acceptance](docs/platforms/Q8B.md).
+> Repository support is being implemented; hardware acceptance remains open.
+
 # homeauto stack
 
 Production-lean Home Assistant Container stack for Debian 12 / Raspberry Pi OS Bookworm.
