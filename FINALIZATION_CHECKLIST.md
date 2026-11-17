@@ -133,7 +133,6 @@ Legend: ✅ Done, ⏳ Pending, ⚠️ Blocked (reason stated in next-step), ❌ 
 
 | Date | Change | Evidence |
 |---|---|---|
-| 2026-11-15 | Q8B audit baseline and commissioning gates (dated observations, not runtime qualification) | `docs/platforms/Q8B_AUDIT_2026-11-15.md`, `docs/platforms/Q8B.md` |
 | 2026-04-14 | Initial finalization baseline | repo commits |
 | 2026-04-14 | Agent/developer instruction corpus | `AGENTS.md` + `.github/instructions/` |
 | 2026-04-14 | Smoke verification tooling added | `scripts/smoke/run_release_smoke.sh` + `docs/SMOKE_TEST_RUNBOOK.md` |
@@ -152,6 +151,7 @@ Legend: ✅ Done, ⏳ Pending, ⚠️ Blocked (reason stated in next-step), ❌ 
 | 2026-04-15 | v1.0.0 finalization pass: `ha/configuration.yaml` updated to match example (recorder stanza added); `backup.sh` extended to cover esphome/, nodered/, mariadb/; `firewall-setup.sh` extended with ESPHome/Node-RED ports and MariaDB exclusion comment; `.env.example` misleading shell_command comment fixed; CHANGELOG cut to [1.0.0]; docs/OPERATIONS.md backup table and firewall section updated | `ha/configuration.yaml`, `scripts/stack/backup.sh`, `scripts/security/firewall-setup.sh`, `.env.example`, `CHANGELOG.md`, `docs/OPERATIONS.md` |
 | 2026-04-15 | v1.0.0 second-pass audit: **critical fix** — `docker-compose.yml` mosquitto healthcheck had trailing `-q` with no argument (confirmed: `mosquitto_pub` exits 1 with "Error: -q argument given but no QoS specified") — stack would never start on real hardware; removed stale `-q`; stale AGENTS.md/SUPPORT_BOUNDARIES.md backup language updated; MariaDB troubleshooting section added; install.sh REPLACE_ME credential warning added | `docker-compose.yml`, `AGENTS.md`, `docs/SUPPORT_BOUNDARIES.md`, `docs/TROUBLESHOOTING.md`, `install.sh` |
 | 2026-05-25 | Trixie compatibility planning pass: added install preflight mode, package presence checks, pinned compose profile, smoke report host metadata, and support-consistency QA checks | `install.sh`, `docker-compose.pinned.yml`, `scripts/smoke/run_release_smoke.sh`, `scripts/qa/check-support-consistency.sh`, `scripts/qa.sh`, `docs/SUPPORT_BOUNDARIES.md`, `README.md`, `docs/OPERATIONS.md`, `update.sh` |
+| 2026-11-15 | Q8B audit baseline and commissioning gates (dated observations, not runtime qualification) | `docs/platforms/Q8B_AUDIT_2026-11-15.md`, `docs/platforms/Q8B.md` |
 
 ---
 
