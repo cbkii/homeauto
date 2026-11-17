@@ -7,6 +7,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import threading
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from test_install import install
@@ -31,7 +32,7 @@ def main():
             return command(['docker', 'exec', '-e', 'XDG_CONFIG_HOME=/test/' + user,
                             name, executable, '-h', '127.0.0.1', *args], timeout=15)
         try:
-            result = command(['docker', 'run', '-d', '--name', name, '--network', 'none',
+            result = command(['docker', 'run', '-d', '--name', name, '-p', '127.0.0.1::1883',
                               '--user', f'{os.geteuid()}:{os.getegid()}',
                               '-e', 'XDG_CONFIG_HOME=/health',
                               '-v', f'{root}/mosquitto/config:/mosquitto/config:ro',
@@ -74,7 +75,42 @@ def main():
             result = client('zigbee', 'mosquitto_sub', '-t', 'ha/actions/#', '-C', '1', '-W', '2')
             if marker in result.stdout:
                 raise RuntimeError('Zigbee user escaped action topic ACL')
-            print('PASS: real broker auth, roundtrip, bad/anonymous credentials, ACL and health configuration')
+            client('ha', 'mosquitto_pub', '-t', 'ha/actions/ci', '-r', '-n', '-q', '1')  # clear retained marker
+            # Exercise exact production MQTTv5 subscription flags: a retained
+            # publish to an already established subscription must stay rejected.
+            import importlib.util
+            import paho.mqtt.client as mqtt
+            spec = importlib.util.spec_from_file_location('bridge', Path(__file__).resolve().parents[1] / 'scripts/ha-action-bridge/bridge.py')
+            bridge = importlib.util.module_from_spec(spec); spec.loader.exec_module(bridge)
+            port_text = command(['docker', 'port', name, '1883/tcp']).stdout.strip()
+            port = int(port_text.rsplit(':', 1)[1])
+            config = dict(mqtt=dict(host='127.0.0.1', port=port, username='bridge', password=creds['bridge']),
+                          tv={'fixture': {'host': '192.168.1.2', 'packages': []}}, bluetooth={})
+            dispatcher = bridge.Dispatcher(config)
+            connection = bridge.make_client(config, dispatcher, mqtt)
+            subscribed = threading.Event(); received = threading.Event()
+            connection.on_subscribe = lambda *a: subscribed.set()
+            original = connection.on_message
+            def observe(*args):
+                original(*args); received.set()
+            connection.on_message = observe
+            connection.connect('127.0.0.1', port, keepalive=30)
+            connection.loop_start()
+            try:
+                if not subscribed.wait(5):
+                    raise RuntimeError('Bridge never subscribed')
+                request = json.dumps(dict(target='fixture', request_id='retained_test_123', expires=time.time() + 30))
+                result = client('ha', 'mosquitto_pub', '-t', 'ha/actions/tv_home', '-m', request, '-r', '-q', '1')
+                if result.returncode or not received.wait(5) or not dispatcher.pending.empty():
+                    raise RuntimeError('Live retained action was accepted')
+                received.clear()
+                request = json.dumps(dict(target='fixture', request_id='ordinary_test_123', expires=time.time() + 30))
+                result = client('ha', 'mosquitto_pub', '-t', 'ha/actions/tv_home', '-m', request, '-q', '1')
+                if result.returncode or not received.wait(5) or dispatcher.pending.qsize() != 1:
+                    raise RuntimeError('Normal allowed action was not queued')
+            finally:
+                connection.disconnect(); connection.loop_stop()
+            print('PASS: real broker auth/ACL/health and live retained-action rejection')
         finally:
             command(['docker', 'rm', '-f', name])
 

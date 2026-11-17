@@ -5,7 +5,7 @@ import subprocess
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'lib'))
-from homeauto import compose, run, owned_services
+from homeauto import compose, run, owned_services, operation_lock
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--data-dir', type=Path, default=Path('/srv/homeauto'))
@@ -21,7 +21,8 @@ try:
     if args.command == 'logs':
         # Logs are local-only; review for sensitive device identities before sharing.
         sys.exit(subprocess.call(compose(args.data_dir, *commands[args.command])))
-    result = run(compose(args.data_dir, *commands[args.command]), timeout=300)
+    with operation_lock(args.data_dir):
+        result = run(compose(args.data_dir, *commands[args.command]), timeout=300)
     if args.command == 'status':
         print(result.stdout, end='')
     print('SUCCESS' if result.returncode == 0 else 'FAILED; inspect local Compose logs')

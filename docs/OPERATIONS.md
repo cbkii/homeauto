@@ -39,5 +39,6 @@ tags, without restarting. Do not restart onto new images until a verified backup
 exists and its isolated restore has been rehearsed (recovery runbook:
 `docs/RECOVERY.md`, delivered with the recovery change).
 
+See [consistent recovery and staged upgrades](RECOVERY.md) and [optional actions](ACTIONS.md).
 Backups/restoration and staged upgrades are required before production promotion.
 Record backup location and off-device copy, not secrets, in acceptance evidence.

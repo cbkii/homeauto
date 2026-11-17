@@ -65,6 +65,7 @@ discovery. Existing host/LAN firewall rules remain the operator's responsibility
 
 ## Operations and recovery
 
+- [Backups and restoration](docs/RECOVERY.md), [optional host actions](docs/ACTIONS.md).
 - [Operations](docs/OPERATIONS.md), [configuration](docs/CONFIG_REFERENCE.md).
 - [Legacy MariaDB migration](docs/LEGACY_MIGRATION.md): preserve history/config.
 - [Support and privilege boundaries](docs/SUPPORT_BOUNDARIES.md).

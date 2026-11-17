@@ -5,7 +5,7 @@ import subprocess
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'lib'))
-from homeauto import compose, run, owned_services
+from homeauto import compose, run, owned_services, operation_lock
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--data-dir', type=Path, default=Path('/srv/homeauto'))
@@ -15,7 +15,8 @@ if not args.yes:
     parser.error('Pass --yes to remove managed containers. Data is preserved.')
 try:
     owned_services(args.data_dir)
-    result = run(compose(args.data_dir, 'down', '--timeout', '60'), timeout=180)
+    with operation_lock(args.data_dir):
+        result = run(compose(args.data_dir, 'down', '--timeout', '60'), timeout=180)
     print('SUCCESS: containers removed; all state/images preserved' if result.returncode == 0 else 'FAILED: containers may remain')
     sys.exit(result.returncode)
 except (OSError, ValueError, subprocess.TimeoutExpired):

@@ -1,6 +1,7 @@
 """Shared, non-shell configuration and bounded command handling."""
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -15,6 +16,14 @@ PROFILES = {'zigbee', 'extras', 'mariadb', 'actions'}
 def run(argv: list[str], *, timeout: int = 30, **kwargs) -> subprocess.CompletedProcess:
     return subprocess.run(argv, check=False, capture_output=True, text=True,
                           timeout=timeout, **kwargs)
+
+
+def sha256_stream(stream, chunk: int = 1024 * 1024) -> str:
+    """Portable replacement for hashlib.file_digest (Python 3.11+); Debian 12+ and CI 3.10."""
+    digest = hashlib.sha256()
+    for block in iter(lambda: stream.read(chunk), b''):
+        digest.update(block)
+    return digest.hexdigest()
 
 
 def env_read(path: Path) -> dict[str, str]:
@@ -103,3 +112,22 @@ def owned_services(root: Path) -> set[str]:
             raise ValueError('Compose project belongs to another application root; choose an unused project')
         services.add(labels.get('com.docker.compose.service', ''))
     return services
+
+
+from contextlib import contextmanager
+import fcntl
+
+
+@contextmanager
+def operation_lock(root: Path):
+    """One lifecycle writer at a time; never follow a supplied lock symlink."""
+    state(root)
+    fd = os.open(root / '.operation.lock', os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+    try:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            raise ValueError('Another homeauto lifecycle operation is active') from exc
+        yield
+    finally:
+        os.close(fd)
