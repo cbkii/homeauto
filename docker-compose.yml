@@ -16,7 +16,7 @@ services:
     environment:
       TZ: ${TZ:-Australia/Sydney}
     volumes:
-      - ${HOMEAUTO_DATA_DIR:-/srv/homeauto}/ha:/config
+      - ${HOMEAUTO_DATA_DIR:?run via install.py/manage.py with the deployment .env; never bare docker compose in the checkout}/ha:/config
     healthcheck:
       test: [CMD, python3, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8123/', timeout=5).close()"]
       interval: 30s
@@ -32,9 +32,9 @@ services:
     environment:
       XDG_CONFIG_HOME: /health
     volumes:
-      - ${HOMEAUTO_DATA_DIR:-/srv/homeauto}/mosquitto/config:/mosquitto/config:ro
-      - ${HOMEAUTO_DATA_DIR:-/srv/homeauto}/mosquitto/data:/mosquitto/data
-      - ${HOMEAUTO_DATA_DIR:-/srv/homeauto}/mosquitto/health:/health:ro
+      - ${HOMEAUTO_DATA_DIR:?run via install.py/manage.py with the deployment .env; never bare docker compose in the checkout}/mosquitto/config:/mosquitto/config:ro
+      - ${HOMEAUTO_DATA_DIR:?run via install.py/manage.py with the deployment .env; never bare docker compose in the checkout}/mosquitto/data:/mosquitto/data
+      - ${HOMEAUTO_DATA_DIR:?run via install.py/manage.py with the deployment .env; never bare docker compose in the checkout}/mosquitto/health:/health:ro
     healthcheck:
       test: [CMD, mosquitto_pub, -h, 127.0.0.1, -t, homeauto/health, -m, ok]
       interval: 30s
@@ -52,7 +52,7 @@ services:
     ports:
       - "127.0.0.1:8080:8080"
     volumes:
-      - ${HOMEAUTO_DATA_DIR:-/srv/homeauto}/zigbee2mqtt:/app/data
+      - ${HOMEAUTO_DATA_DIR:?run via install.py/manage.py with the deployment .env; never bare docker compose in the checkout}/zigbee2mqtt:/app/data
       - /run/udev:/run/udev:ro
     devices:
       - ${ZIGBEE_DEVICE:-/dev/null}:/dev/zigbee
@@ -79,7 +79,7 @@ services:
       TZ: ${TZ:-Australia/Sydney}
     secrets: [db_root, db_user]
     volumes:
-      - ${HOMEAUTO_DATA_DIR:-/srv/homeauto}/mariadb:/var/lib/mysql
+      - ${HOMEAUTO_DATA_DIR:?run via install.py/manage.py with the deployment .env; never bare docker compose in the checkout}/mariadb:/var/lib/mysql
     healthcheck:
       test: [CMD, healthcheck.sh, --connect, --innodb_initialized]
       interval: 30s
@@ -95,7 +95,7 @@ services:
     environment:
       TZ: ${TZ:-Australia/Sydney}
     volumes:
-      - ${HOMEAUTO_DATA_DIR:-/srv/homeauto}/esphome:/config
+      - ${HOMEAUTO_DATA_DIR:?run via install.py/manage.py with the deployment .env; never bare docker compose in the checkout}/esphome:/config
     command: [dashboard, /config, --address, 127.0.0.1, --port, "6052"]
     healthcheck:
       test: [CMD, python3, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:6052/', timeout=5).close()"]
@@ -113,7 +113,7 @@ services:
     environment:
       TZ: ${TZ:-Australia/Sydney}
     volumes:
-      - ${HOMEAUTO_DATA_DIR:-/srv/homeauto}/nodered:/data
+      - ${HOMEAUTO_DATA_DIR:?run via install.py/manage.py with the deployment .env; never bare docker compose in the checkout}/nodered:/data
     healthcheck:
       test: [CMD, node, -e, "require('http').get('http://127.0.0.1:1880/',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
       interval: 30s
@@ -123,6 +123,6 @@ services:
 
 secrets:
   db_root:
-    file: ${HOMEAUTO_DATA_DIR:-/srv/homeauto}/private/db_root
+    file: ${HOMEAUTO_DATA_DIR:?run via install.py/manage.py with the deployment .env; never bare docker compose in the checkout}/private/db_root
   db_user:
-    file: ${HOMEAUTO_DATA_DIR:-/srv/homeauto}/private/db_user
+    file: ${HOMEAUTO_DATA_DIR:?run via install.py/manage.py with the deployment .env; never bare docker compose in the checkout}/private/db_user
