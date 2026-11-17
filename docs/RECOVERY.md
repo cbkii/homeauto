@@ -22,7 +22,11 @@ this host backup also preserves MQTT/Zigbee and deployment state.
 `--offline` requires all project containers stopped and honestly labels SQL as
 `cold-snapshot-only`; it does not claim a logical dump. A stopped/missing required
 DB in online mode is a failure. Failed dumps/stops/restore checks publish no
-successful new archive. If service resumption fails, inspect/recover locally.
+successful new archive. Exit codes: `0` archive verified and original services
+healthy; `2` no archive published; `3` archive verified and kept, but original
+services did not return healthy within 6 minutes. On `3`, `last-success.json` is
+not updated and retention is not pruned: run `manage.py status`, recover service
+locally, then treat the named archive as usable.
 The archive and staging are private (0600/0700); successful archives have per-file
 SHA256, modes, ownership, configuration and image evidence. These hashes detect
 corruption; they are not a signature against an attacker replacing the archive.

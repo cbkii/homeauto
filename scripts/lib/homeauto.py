@@ -1,6 +1,7 @@
 """Shared, non-shell configuration and bounded command handling."""
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -15,6 +16,14 @@ PROFILES = {'zigbee', 'extras', 'mariadb', 'actions'}
 def run(argv: list[str], *, timeout: int = 30, **kwargs) -> subprocess.CompletedProcess:
     return subprocess.run(argv, check=False, capture_output=True, text=True,
                           timeout=timeout, **kwargs)
+
+
+def sha256_stream(stream, chunk: int = 1024 * 1024) -> str:
+    """Portable replacement for hashlib.file_digest (Python 3.11+); Debian 12+ and CI 3.10."""
+    digest = hashlib.sha256()
+    for block in iter(lambda: stream.read(chunk), b''):
+        digest.update(block)
+    return digest.hexdigest()
 
 
 def env_read(path: Path) -> dict[str, str]:

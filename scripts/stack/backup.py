@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 from contextlib import nullcontext
 from datetime import datetime, timezone
-import hashlib
 import json
 import logging
 import os
@@ -19,10 +18,18 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'lib'))
-from homeauto import atomic, compose, operation_lock, owned_services, run, safe_root, state
+from homeauto import atomic, compose, operation_lock, owned_services, run, safe_root, sha256_stream, state
 
 LOG = logging.getLogger('homeauto-backup')
 EXCLUDE = {'.operation.lock'}
+RECOVERY_SECONDS = 360  # HA start_period 120 s + 6 x 30 s health retries on a large recorder DB.
+
+
+class RecoveryError(RuntimeError):
+    """Archive is verified and published, but original services did not recover."""
+    def __init__(self, archive: Path):
+        super().__init__('Services did not recover after a verified backup')
+        self.archive = archive
 
 
 class Runtime:
@@ -55,17 +62,19 @@ class Runtime:
     def stop(self, services: list[str]):
         if not services:
             return
-        result = run(compose(self.root, 'stop', '--timeout', '60', *services), timeout=120)
-        if result.returncode or any(r['State'] not in {'exited', 'created'} for r in self.rows()):
+        result = run(compose(self.root, 'stop', '--timeout', '60', *services), timeout=180)
+        # Only the requested writers must be stopped: MariaDB deliberately stays up for the dump.
+        rows = {r['Service']: r['State'] for r in self.rows()}
+        if result.returncode or any(rows.get(s) not in {'exited', 'created'} for s in services):
             raise RuntimeError('Writers did not stop; no snapshot taken')
 
     def start(self, services: list[str]):
         if not services:
             return
-        result = run(compose(self.root, 'start', *services), timeout=120)
+        result = run(compose(self.root, 'start', *services), timeout=180)
         if result.returncode:
             raise RuntimeError('Could not resume original services')
-        deadline = time.monotonic() + 120
+        deadline = time.monotonic() + RECOVERY_SECONDS
         while time.monotonic() < deadline:
             rows = {r['Service']: r for r in self.rows()}
             if all(rows.get(s, {}).get('State') == 'running' and
@@ -104,7 +113,7 @@ def snapshot(root: Path, staging: Path, images: dict, db_status: str) -> dict:
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(path, target, follow_symlinks=False)
             with target.open('rb') as stream:
-                digest = hashlib.file_digest(stream, 'sha256').hexdigest()
+                digest = sha256_stream(stream)
             files[str(relative)] = dict(sha256=digest, size=info.st_size,
                                        mode=stat.S_IMODE(info.st_mode), uid=info.st_uid, gid=info.st_gid)
         else:
@@ -116,7 +125,7 @@ def snapshot(root: Path, staging: Path, images: dict, db_status: str) -> dict:
     if db_status == 'ok':
         dump = staging / 'mariadb-logical.sql'
         with dump.open('rb') as stream:
-            manifest['sql_sha256'] = hashlib.file_digest(stream, 'sha256').hexdigest()
+            manifest['sql_sha256'] = sha256_stream(stream)
     atomic(staging / 'manifest.json', json.dumps(manifest, indent=2) + '\n')
     return manifest
 
@@ -170,10 +179,14 @@ def create_backup(root: Path, destination: Path, *, runtime=None, offline=False,
             # Verify bytes and structure before publishing the successful archive.
             from restore import verify
             verify(temporary)
-            # Health recovery is part of success; retain failed archives privately only as staging.
-            runtime.start(running)
+            # A verified archive is kept even if services then recover slowly or fail; the
+            # last-success marker (used by monitoring) is written only after recovery.
             os.replace(temporary, archive)
             published = True
+            try:
+                runtime.start(running)
+            except (OSError, RuntimeError, subprocess.TimeoutExpired) as exc:
+                raise RecoveryError(archive) from exc
             atomic(destination / 'last-success.json', json.dumps(dict(
                 schema=1, created_utc=datetime.now(timezone.utc).isoformat(), archive=archive.name)) + '\n')
             LOG.info('SUCCESS: private verified archive %s; copy off-device and rehearse restore', archive)
@@ -208,6 +221,10 @@ def main():
                 verify(old)
                 old.unlink()
         return 0
+    except RecoveryError as exc:
+        LOG.error('FAILED: archive %s verified, but original services did not recover healthy; '
+                  'run manage.py status and restore service before relying on automation', exc.archive.name)
+        return 3
     except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired):
         LOG.error('FAILED: backup incomplete; inspect private state and original service health. No success archive published.')
         return 2

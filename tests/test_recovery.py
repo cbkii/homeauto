@@ -126,9 +126,6 @@ class RecoveryTests(unittest.TestCase):
         self.assertFalse(self.destination.exists())
 
 
-if __name__ == '__main__':
-    unittest.main()
-
 class TransitionalStateTests(unittest.TestCase):
     def test_transitional_states_never_publish_even_in_offline_mode(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -141,3 +138,51 @@ class TransitionalStateTests(unittest.TestCase):
                     with self.assertRaises(ValueError):
                         create_backup(root, Path(temp) / 'backups', runtime=runtime, offline=offline)
             self.assertFalse((Path(temp) / 'backups').exists())
+
+
+class RuntimeStopPredicateTests(unittest.TestCase):
+    """Regression: real Runtime.stop must ignore MariaDB kept running for the dump."""
+    def runtime(self, states):
+        import backup
+        runtime = backup.Runtime.__new__(backup.Runtime)
+        runtime.root = Path('/unused')
+        runtime.rows = lambda: [dict(Service=s, State=v) for s, v in states.items()]
+        original = backup.run, backup.compose
+        backup.run = lambda argv, **kw: type('R', (), dict(returncode=0, stdout='', stderr=''))()
+        backup.compose = lambda root, *args: ['docker', 'compose', *args]
+        self.addCleanup(lambda: setattr(backup, 'run', original[0]))
+        self.addCleanup(lambda: setattr(backup, 'compose', original[1]))
+        return runtime
+
+    def test_database_left_running_is_not_a_stop_failure(self):
+        self.runtime(dict(homeassistant='exited', mosquitto='exited', mariadb='running')).stop(['homeassistant', 'mosquitto'])
+
+    def test_requested_writer_still_running_is_refused(self):
+        with self.assertRaises(RuntimeError):
+            self.runtime(dict(homeassistant='running', mariadb='running')).stop(['homeassistant'])
+
+    def test_requested_writer_missing_is_refused(self):
+        with self.assertRaises(RuntimeError):
+            self.runtime(dict(mariadb='running')).stop(['homeassistant'])
+
+
+class SlowRecoveryTests(unittest.TestCase):
+    def test_verified_archive_kept_but_success_marker_withheld(self):
+        import backup
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / 'app'
+            destination = Path(temp) / 'backups'
+            install.prepare(root, [], '', '', False, 'slow-test', 'Australia/Sydney')
+            runtime = FakeRuntime(['homeassistant', 'mosquitto'], fail_start=True)
+            with self.assertRaises(backup.RecoveryError) as caught:
+                create_backup(root, destination, runtime=runtime)
+            archive = caught.exception.archive
+            self.assertTrue(archive.is_file())
+            self.assertEqual(archive.stat().st_mode & 0o777, 0o600)
+            self.assertEqual(verify(archive)['db_logical_dump_status'], 'not-enabled')
+            self.assertFalse((destination / 'last-success.json').exists())
+            self.assertFalse(list(destination.glob('.homeauto-*')))
+
+
+if __name__ == '__main__':
+    unittest.main()

@@ -2,7 +2,6 @@
 """Verify and optionally restore bytes into an unoccupied directory. Never start services."""
 from __future__ import annotations
 import argparse
-import hashlib
 import json
 import os
 from pathlib import Path, PurePosixPath
@@ -12,7 +11,7 @@ import sys
 import tarfile
 import tempfile
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'lib'))
-from homeauto import safe_root
+from homeauto import safe_root, sha256_stream
 
 
 def verify(archive: Path) -> dict:
@@ -45,7 +44,7 @@ def verify(archive: Path) -> dict:
         if manifest.get('sql_sha256'):
             expected.add('mariadb-logical.sql')
             stream = tar.extractfile('mariadb-logical.sql')
-            if hashlib.file_digest(stream, 'sha256').hexdigest() != manifest['sql_sha256']:
+            if sha256_stream(stream) != manifest['sql_sha256']:
                 raise ValueError('SQL dump hash mismatch')
         if seen != expected:
             raise ValueError('Archive does not match manifest inventory')
@@ -54,7 +53,7 @@ def verify(archive: Path) -> dict:
             if not member.isfile() or member.size != evidence['size']:
                 raise ValueError('File size/type mismatch')
             with tar.extractfile(member) as stream:
-                if hashlib.file_digest(stream, 'sha256').hexdigest() != evidence['sha256']:
+                if sha256_stream(stream) != evidence['sha256']:
                     raise ValueError('File hash mismatch')
         for required in ['.homeauto.json', 'compose.yaml', 'secrets.json']:
             if required not in manifest['files']:
