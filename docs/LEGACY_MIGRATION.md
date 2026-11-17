@@ -13,6 +13,11 @@ HA `.storage`, secrets, SQL history and Zigbee network state.
 4. Preserve the existing `recorder.db_url` and its secrets if MariaDB history is
    required. Enable the new `mariadb` profile and restore the tested dump to the
    same supported DB version before starting the existing HA configuration.
+   The service's `MARIADB_DATABASE`/`MARIADB_USER` (`homeauto`) apply only when an
+   empty datadir is first initialised; they do not rename anything. Keep the legacy
+   database and user by importing a dump that includes the `mysql` system schema
+   (`--all-databases`), or create the legacy database/user and grants explicitly
+   before starting HA. Then confirm `recorder.db_url` connects with the legacy names.
 5. Existing host-networked HA may reach the optional DB via `127.0.0.1:3306`.
    Preserve the original DB name/user/password and update the protected password
    files deliberately. Do not replace them with fresh generated credentials.

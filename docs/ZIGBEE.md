@@ -8,25 +8,33 @@ optional profile: if the coordinator is missing or blocked, HA and MQTT keep run
 All five SMLIGHT SLZB-07 variants use the same Silicon Labs CP2102N USB bridge,
 so `lsusb` (`10c4:ea60`) cannot identify the radio:
 
-| Variant (label) | Radio | `--zigbee-adapter` |
-| --- | --- | --- |
-| SLZB-07 | EFR32MG21 | `ember` |
-| SLZB-07Mg24 | EFR32MG24 | `ember` |
-| SLZB-07Mg26 | EFR32MG26 | `ember` |
-| SLZB-07p7 | CC2652P7 | `zstack` |
-| SLZB-07p10 | CC2674P10 | `zstack` |
+| Variant (label) | Radio | `--zigbee-adapter` | `--zigbee-rtscts` |
+| --- | --- | --- | --- |
+| SLZB-07 | EFR32MG21 | `ember` | `true` |
+| SLZB-07Mg24 | EFR32MG24 | `ember` | `true` |
+| SLZB-07Mg26 | EFR32MG26 | `ember` | `true` |
+| SLZB-07p7 | CC2652P7 | `zstack` | `false` |
+| SLZB-07p10 | CC2674P10 | `zstack` | `false` |
+
+Flow control follows SMLIGHT's SLZB-07 Zigbee2MQTT manual (MGx: `rtscts: true`;
+pX: `rtscts: false`); other vendors' sticks need their own documented value, so
+the installer requires it explicitly. Baud rate stays at the Zigbee2MQTT default.
+SMLIGHT notes some SLZB-07 sticks shipped with older EZSP firmware intended for
+the deprecated `ezsp` driver; `ember` then fails to connect (not destructive).
+Updating radio firmware is a separate, explicitly approved step: this repository
+never flashes.
 
 Confirm the printed label, then run the read-only preflight with the stable link:
 
 ```bash
 ls -l /dev/serial/by-id/                      # use this path, never /dev/ttyUSB*
 ./install.sh --preflight-only --profiles zigbee \
-  --zigbee-device /dev/serial/by-id/<link> --zigbee-adapter <ember|zstack>
+  --zigbee-device /dev/serial/by-id/<link> --zigbee-adapter <ember|zstack> --zigbee-rtscts <true|false>
 ```
 
 `coordinator-variant` reads only the USB product descriptor (never the serial
 number). `BLOCK` means the descriptor names a variant that needs the other
-adapter; `WARN` means the descriptor does not identify the radio, so rely on the
+adapter or the other documented flow control; `WARN` means the descriptor does not identify the radio, so rely on the
 label. Neither proves the firmware is Zigbee coordinator firmware (a stick
 reflashed for Thread or as a router will simply fail to start in Z2M; this is
 not destructive).
@@ -46,7 +54,7 @@ network you need. If you are unsure, assume it does and use section 3.
 ```bash
 sudo ./install.sh --prepare --data-dir /srv/homeauto --with-zigbee \
   --zigbee-device /dev/serial/by-id/<link> --zigbee-adapter <ember|zstack> \
-  --zigbee-network new
+  --zigbee-rtscts <true|false> --zigbee-network new
 ```
 
 Roots prepared before this decision existed are blocked from a Zigbee first start

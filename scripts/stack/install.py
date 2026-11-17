@@ -49,7 +49,7 @@ def zigbee_first_start(root: Path) -> bool:
 
 
 def prepare(root: Path, profiles: list[str], device: str, adapter: str, bluetooth: bool,
-            project: str, timezone: str, zigbee_network: str = '') -> bool:
+            project: str, timezone: str, zigbee_network: str = '', zigbee_rtscts: bool | None = None) -> bool:
     safe_root(root)
     if root.exists():
         current = state(root)
@@ -59,6 +59,8 @@ def prepare(root: Path, profiles: list[str], device: str, adapter: str, bluetoot
             raise ValueError('Coordinator change requires explicit migration; existing network preserved')
         if adapter and adapter != current.get('zigbee_adapter'):
             raise ValueError('Adapter differs from stored coordinator; existing network preserved')
+        if zigbee_rtscts is not None and zigbee_rtscts != current.get('zigbee_rtscts'):
+            raise ValueError('Serial flow control is recorded once; existing state preserved')
         if zigbee_network and zigbee_network != current.get('zigbee_network'):
             raise ValueError('Zigbee network decision is recorded once; existing state preserved')
         LOG.info('Prepared state already exists; no credentials/configuration changed')
@@ -66,12 +68,17 @@ def prepare(root: Path, profiles: list[str], device: str, adapter: str, bluetoot
     if not root.parent.is_dir():
         raise ValueError('Application parent must already exist')
     if 'zigbee' in profiles:
-        if not device.startswith('/dev/serial/by-id/') or adapter not in {'ember', 'zstack'}:
+        # Whole-path allowlist: the value is written into .env, so a newline could inject
+        # another Compose variable (e.g. override MQTT_BIND_ADDRESS).
+        if not re.fullmatch(r'/dev/serial/by-id/[A-Za-z0-9._:+@-]{1,200}', device) or adapter not in {'ember', 'zstack'}:
             raise ValueError('Zigbee needs a stable by-id path and explicitly verified ember/zstack variant')
         if zigbee_network != 'new':
             raise ValueError(NETWORK_ACK)
-    elif zigbee_network:
-        raise ValueError('--zigbee-network applies only to the zigbee profile')
+        if zigbee_rtscts is None:
+            raise ValueError('Zigbee needs --zigbee-rtscts true|false from the adapter vendor documentation '
+                             '(SMLIGHT SLZB-07/MGx: true; SLZB-07pX: false; see docs/ZIGBEE.md)')
+    elif zigbee_network or zigbee_rtscts is not None:
+        raise ValueError('--zigbee-network/--zigbee-rtscts apply only to the zigbee profile')
     if not re.fullmatch(r'[a-z][a-z0-9_-]{2,40}', project):
         raise ValueError('Invalid Compose project name')
     if not re.fullmatch(r'[A-Za-z0-9_+/-]+', timezone) or not (Path('/usr/share/zoneinfo') / timezone).is_file():
@@ -96,7 +103,6 @@ def prepare(root: Path, profiles: list[str], device: str, adapter: str, bluetoot
         write(staging / 'secrets.json', json.dumps(credentials, indent=2) + '\n')
         for name in ['db_root', 'db_user']:
             write(staging / 'private' / name, credentials[name] + '\n')
-        write(staging / 'private/db_backup.cnf', '[client]\nuser=root\npassword=' + credentials['db_root'] + '\n')
         passwd = ''.join(user + ':' + password_hash(credentials[user]) + '\n'
                          for user in ['ha', 'zigbee', 'bridge', 'health'])
         write(staging / 'mosquitto/config/passwd', passwd, 0o640, 1883)
@@ -116,7 +122,7 @@ def prepare(root: Path, profiles: list[str], device: str, adapter: str, bluetoot
         if 'zigbee' in profiles:
             z2m = dict(version=Z2M_SETTINGS_VERSION, homeassistant={'enabled': True}, frontend={'enabled': True, 'port': 8080},
                        mqtt={'server': 'mqtt://mosquitto:1883', 'user': 'zigbee', 'password': credentials['zigbee']},
-                       serial={'port': '/dev/zigbee', 'adapter': adapter},
+                       serial={'port': '/dev/zigbee', 'adapter': adapter, 'rtscts': zigbee_rtscts},
                        advanced={'network_key': list(secrets.token_bytes(16)),
                                  'pan_id': secrets.randbelow(0xFFFE) + 1, 'ext_pan_id': list(secrets.token_bytes(8))},
                        availability={'enabled': True})
@@ -127,7 +133,7 @@ def prepare(root: Path, profiles: list[str], device: str, adapter: str, bluetoot
         write(staging / 'compose.bluetooth.yaml', (REPO / 'deploy/q8b/compose.bluetooth.yaml').read_text())
         marker = dict(schema=1, data_dir=str(root), profiles=profiles, project=project,
                       bluetooth=bluetooth, zigbee_device=device, zigbee_adapter=adapter,
-                      zigbee_network=zigbee_network)
+                      zigbee_network=zigbee_network, zigbee_rtscts=zigbee_rtscts)
         write(staging / '.homeauto.json', json.dumps(marker, indent=2) + '\n')
         # Never replace an occupied root. mkdir/rename race is prevented by exclusive lock.
         lock = root.parent / ('.' + root.name + '.homeauto-prepare.lock')
@@ -169,8 +175,10 @@ def _apply(root: Path) -> int:
     if 'extras' in current['profiles']:
         selections.append(['esphome', 'nodered'])
     if 'zigbee' in current['profiles']:
+        flow = current.get('zigbee_rtscts')
         result = run(command + ['--profiles', 'zigbee', '--zigbee-device', current['zigbee_device'],
-                                '--zigbee-adapter', current.get('zigbee_adapter', '')], timeout=180)
+                                '--zigbee-adapter', current.get('zigbee_adapter', '')] +
+                     ([] if flow is None else ['--zigbee-rtscts', str(flow).lower()]), timeout=180)
         if zigbee_first_start(root) and current.get('zigbee_network') != 'new':
             # Roots prepared before the acknowledgement existed: never let a first start
             # overwrite an unknown coordinator network.
@@ -211,6 +219,8 @@ def main() -> int:
     parser.add_argument('--with-bluetooth', action='store_true')
     parser.add_argument('--zigbee-device', default='')
     parser.add_argument('--zigbee-adapter', choices=['ember', 'zstack'], default='')
+    parser.add_argument('--zigbee-rtscts', choices=['true', 'false'], default=None,
+                        help='Serial hardware flow control from the adapter documentation')
     parser.add_argument('--zigbee-network', choices=['new'], default='',
                         help='Acknowledge that first start forms a new network on the coordinator')
     parser.add_argument('--project', default='homeauto')
@@ -229,10 +239,12 @@ def main() -> int:
             return subprocess.call([sys.executable, str(REPO / 'scripts/diagnostics/homeauto-preflight.py'),
                                     '--data-dir', str(root), '--profiles', ','.join(sorted(profiles)),
                                     '--zigbee-device', args.zigbee_device,
-                                    '--zigbee-adapter', args.zigbee_adapter])
+                                    '--zigbee-adapter', args.zigbee_adapter] +
+                                   ([] if args.zigbee_rtscts is None else ['--zigbee-rtscts', args.zigbee_rtscts]))
         if args.prepare:
             prepare(root, sorted(profiles), args.zigbee_device, args.zigbee_adapter,
-                    args.with_bluetooth, args.project, args.timezone, args.zigbee_network)
+                    args.with_bluetooth, args.project, args.timezone, args.zigbee_network,
+                    None if args.zigbee_rtscts is None else args.zigbee_rtscts == 'true')
             return 0
         if args.apply:
             return apply(root)

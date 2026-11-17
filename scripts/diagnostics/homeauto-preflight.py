@@ -13,10 +13,33 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'lib'))
-from homeauto import run, safe_root, state, owned_services  # noqa: E402
+from homeauto import env_read, run, safe_root, state, owned_services  # noqa: E402
 
 PORTS = {'homeassistant': 8123, 'mosquitto': 1883, 'zigbee': 8080,
          'mariadb': 3306, 'esphome': 6052, 'nodered': 1880}
+# Address each service binds (docker-compose.yml). HA uses host networking on all
+# addresses; MQTT follows MQTT_BIND_ADDRESS; the rest publish on loopback only.
+BINDS = {'homeassistant': '0.0.0.0', 'mosquitto': '127.0.0.1', 'zigbee': '127.0.0.1',
+         'mariadb': '127.0.0.1', 'esphome': '127.0.0.1', 'nodered': '127.0.0.1'}
+WILDCARD = {'0.0.0.0', '::', '*', ''}
+SUPPORTED = {('debian', '12'), ('debian', '13'), ('raspbian', '12'), ('raspbian', '13')}
+
+
+def overlaps(ours: str, theirs: str) -> bool:
+    """A listener blocks our bind if either side is a wildcard or the addresses match."""
+    return ours in WILDCARD or theirs in WILDCARD or ours == theirs or (
+        ours == '127.0.0.1' and theirs.startswith('127.'))
+
+
+def parse_listener(local: str) -> tuple[str, int] | None:
+    """ss local address -> (address, port): 127.0.0.1:1883, [::]:8123, *:80, 0.0.0.0%lo:53."""
+    address, _, port = local.rpartition(':')
+    try:
+        number = int(port)
+    except ValueError:
+        return None
+    address = address.strip('[]').split('%', 1)[0]
+    return ('::' if address == '::' else address), number
 
 
 # SMLIGHT SLZB-07 family: every variant uses the same CP2102N bridge, so VID:PID cannot
@@ -24,6 +47,8 @@ PORTS = {'homeassistant': 8123, 'mosquitto': 1883, 'zigbee': 8080,
 SLZB07_VARIANTS = {'': ('EFR32MG21', 'ember'), 'mg24': ('EFR32MG24', 'ember'),
                    'mg26': ('EFR32MG26', 'ember'), 'p7': ('CC2652P7', 'zstack'),
                    'p10': ('CC2674P10', 'zstack')}
+# SMLIGHT SLZB-07 manual, Zigbee2MQTT setup (checked 2026-11-17): MGx rtscts true, pX false.
+SLZB07_RTSCTS = {'ember': True, 'zstack': False}
 
 
 def variant_hint(product: str | None):
@@ -53,12 +78,19 @@ def usb_descriptor(serial: Path) -> dict | None:
                 product=attr('product'))
 
 
-def checks(facts: dict, profiles: set[str], adapter: str = '') -> list[dict]:
+def docker_version_ok(text: str, minimum: int = 23) -> bool:
+    """HA Container needs Engine >= 23; accepts Debian suffixes such as 26.1.5+dfsg1."""
+    match = re.match(r'\s*(\d+)\.\d+', text or '')
+    return bool(match) and int(match.group(1)) >= minimum
+
+
+def checks(facts: dict, profiles: set[str], adapter: str = '', rtscts: bool | None = None) -> list[dict]:
     rows = []
     def add(name, status, detail):
         rows.append(dict(check=name, status=status, detail=detail))
-    add('platform', 'PASS' if facts['os'] in {'debian', 'raspbian'} else 'WARN',
-        f"{facts['os']} {facts['version']}; {facts['arch']}; {facts['kernel']}")
+    add('platform', 'PASS' if (facts['os'], facts['version']) in SUPPORTED else 'WARN',
+        f"{facts['os']} {facts['version']}; {facts['arch']}; {facts['kernel']}" +
+        ('' if (facts['os'], facts['version']) in SUPPORTED else '; only Debian/Raspberry Pi OS 12-13 are targets'))
     add('architecture', 'PASS' if facts['arch'] in {'aarch64', 'x86_64'} else 'BLOCK',
         'ARM64 and AMD64 image lanes; other architectures require qualification')
     add('pages', 'PASS' if facts['pages'] == 4096 else 'WARN',
@@ -93,6 +125,9 @@ def checks(facts: dict, profiles: set[str], adapter: str = '') -> list[dict]:
         if facts['serial_present'] and hint and adapter and hint[2] != adapter:
             add('coordinator-variant', 'BLOCK', f'USB descriptor reports {hint[0]} ({hint[1]}, adapter {hint[2]}); '
                 f'declared adapter {adapter} does not match. Confirm label/firmware; no radio was contacted')
+        elif facts['serial_present'] and hint and rtscts is not None and rtscts != SLZB07_RTSCTS[hint[2]]:
+            add('coordinator-variant', 'BLOCK', f'{hint[0]} is documented by SMLIGHT with rtscts '
+                f'{str(SLZB07_RTSCTS[hint[2]]).lower()}; declared {str(rtscts).lower()}. No radio was contacted')
         elif facts['serial_present'] and hint:
             add('coordinator-variant', 'PASS' if adapter else 'WARN',
                 f'USB descriptor reports {hint[0]} ({hint[1]}, adapter {hint[2]})' +
@@ -108,7 +143,8 @@ def checks(facts: dict, profiles: set[str], adapter: str = '') -> list[dict]:
         needed.add('mariadb')
     for name in sorted(needed):
         owned = ('zigbee2mqtt' if name == 'zigbee' else name) in facts.get('managed_services', [])
-        occupied = PORTS[name] in facts['ports']
+        bind = facts.get('mqtt_bind', '127.0.0.1') if name == 'mosquitto' else BINDS[name]
+        occupied = any(port == PORTS[name] and overlaps(bind, address) for address, port in facts['ports'])
         add('port-' + name, 'WARN' if occupied and owned else 'BLOCK' if occupied else 'PASS',
             f'TCP {PORTS[name]} active (managed service)' if occupied and owned else
             f'TCP {PORTS[name]} occupied by other service' if occupied else f'TCP {PORTS[name]} free')
@@ -132,12 +168,8 @@ def collect(root: Path, serial: str) -> dict:
             return None
     version = probe(['docker', 'version', '--format', '{{.Server.Version}}'])
     plugin = probe(['docker', 'compose', 'version'])
-    ready = bool(version and version.returncode == 0 and plugin and plugin.returncode == 0)
-    if ready:
-        try:
-            ready = int(version.stdout.split('.')[0]) >= 23
-        except ValueError:
-            ready = False
+    ready = bool(version and version.returncode == 0 and plugin and plugin.returncode == 0
+                 and docker_version_ok(version.stdout))
     package_names = ['docker.io', 'docker-compose', 'docker-ce', 'docker-ce-cli',
                      'docker-compose-plugin', 'containerd', 'containerd.io', 'runc', 'podman-docker']
     installed = []
@@ -164,11 +196,15 @@ def collect(root: Path, serial: str) -> dict:
     ports = set()
     for line in sockets.stdout.splitlines():
         fields = line.split()
-        if len(fields) >= 4:
-            try:
-                ports.add(int(fields[3].rsplit(':', 1)[-1]))
-            except ValueError:
-                continue
+        listener = parse_listener(fields[3]) if len(fields) >= 4 else None
+        if listener:
+            ports.add(listener)
+    mqtt_bind = '127.0.0.1'
+    if (root / '.env').is_file():
+        try:
+            mqtt_bind = env_read(root / '.env').get('MQTT_BIND_ADDRESS', mqtt_bind)
+        except ValueError:
+            pass
     serial_path = Path(serial) if serial else None
     present = bool(serial_path and serial.startswith('/dev/serial/by-id/') and serial_path.is_symlink()
                    and serial_path.resolve().is_char_device())
@@ -200,6 +236,7 @@ def collect(root: Path, serial: str) -> dict:
                 packages=installed, mixed_packages=bool(mixed), features=features,
                 free_bytes=shutil.disk_usage(existing).free, writable=os.access(existing, os.W_OK),
                 ntp=bool(ntp and ntp.returncode == 0 and ntp.stdout.strip() == 'yes'), ports=ports,
+                mqtt_bind=mqtt_bind,
                 serial_present=present, serial_busy=bool(holder and holder.returncode == 0),
                 serial_descriptor=usb_descriptor(serial_path) if present else None,
                 interfaces=sorted(p.name for p in Path('/sys/class/net').glob('*')), usb=sorted(usb))
@@ -212,13 +249,15 @@ def main() -> int:
     parser.add_argument('--profiles', default='')
     parser.add_argument('--zigbee-device', default='')
     parser.add_argument('--zigbee-adapter', choices=['', 'ember', 'zstack'], default='')
+    parser.add_argument('--zigbee-rtscts', choices=['true', 'false'], default=None)
     args = parser.parse_args()
     profiles = set(filter(None, args.profiles.split(',')))
     if profiles - {'zigbee', 'extras', 'mariadb', 'actions'}:
         parser.error('Unknown profile')
     try:
         safe_root(args.data_dir)
-        rows = checks(collect(args.data_dir, args.zigbee_device), profiles, args.zigbee_adapter)
+        rows = checks(collect(args.data_dir, args.zigbee_device), profiles, args.zigbee_adapter,
+                      None if args.zigbee_rtscts is None else args.zigbee_rtscts == 'true')
         code = 2 if any(r['status'] == 'BLOCK' for r in rows) else 1 if any(r['status'] == 'WARN' for r in rows) else 0
         report = dict(schema=1, exit_code=code, checks=rows)
     except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired) as exc:

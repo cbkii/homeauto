@@ -37,7 +37,7 @@ def main():
     with tempfile.TemporaryDirectory() as temp:
         root = Path(temp) / 'app'
         prepare(root, ['zigbee'], '/dev/serial/by-id/usb-fixture-if00-port0', 'ember', False,
-                'commission-ci-' + secrets.token_hex(4), 'Australia/Sydney', 'new')
+                'commission-ci-' + secrets.token_hex(4), 'Australia/Sydney', 'new', True)
         password = json.loads((root / 'secrets.json').read_text())['zigbee']
         try:
             up = subprocess.run(compose(root, 'up', '-d', '--wait', '--wait-timeout', '120', 'mosquitto'),

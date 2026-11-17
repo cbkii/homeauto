@@ -2,7 +2,7 @@
 
 ## Purpose
 This repository provides a production-lean Home Assistant Container stack on
-**Debian 12/13 / Raspberry Pi OS (64-bit), including Q8B** using Docker Compose.
+**Debian 12/13 / Raspberry Pi OS (64-bit), with Q8B hardware acceptance pending** using Docker Compose.
 
 Primary services and capabilities:
 - Home Assistant (Container edition — not HA OS)
@@ -79,10 +79,10 @@ Local entrypoint:
 
 Release verification:
 ```bash
-./scripts/smoke/run_release_smoke.sh --mode verify   # non-destructive
-sudo ./scripts/smoke/run_release_smoke.sh --mode full  # full lifecycle (target host)
+./scripts/smoke/run_release_smoke.sh --mode verify   # non-destructive, read-only report
 ```
-(Full runbook: `docs/SMOKE_TEST_RUNBOOK.md`)
+Lifecycle qualification on the target host is a manual operator runbook
+(`docs/SMOKE_TEST_RUNBOOK.md`); there is no automated destructive `--mode full`.
 
 ---
 

@@ -29,13 +29,19 @@ def config_read(path: Path) -> dict:
     for name, target in data.get('tv', {}).items():
         if not re.fullmatch(r'[a-z][a-z0-9_]{0,39}', name):
             raise ValueError('Invalid target name')
-        ip = ipaddress.ip_address(target['host'])
-        if not any(ip in network for network in PRIVATE_NETS) or not 1 <= target.get('port', 5555) <= 65535:
+        host, port = target.get('host'), target.get('port', 5555)
+        # ip_address() also accepts integers; execute() needs a string, so reject before parsing.
+        if not isinstance(host, str) or type(port) is not int:
+            raise ValueError('TV host must be a string IP and port an integer')
+        ip = ipaddress.ip_address(host)
+        if not any(ip in network for network in PRIVATE_NETS) or not 1 <= port <= 65535:
             raise ValueError('TV must use an explicitly allowed private IP/port')
-        if any(not re.fullmatch(r'[A-Za-z][A-Za-z0-9_.]{1,199}', p) for p in target.get('packages', [])):
+        packages = target.get('packages', [])
+        if not isinstance(packages, list) or any(not isinstance(p, str) or
+                                                 not re.fullmatch(r'[A-Za-z][A-Za-z0-9_.]{1,199}', p) for p in packages):
             raise ValueError('Invalid package allowlist')
     for name, mac in data.get('bluetooth', {}).items():
-        if not re.fullmatch(r'[a-z][a-z0-9_]{0,39}', name) or not re.fullmatch(r'(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}', mac):
+        if not isinstance(mac, str) or not re.fullmatch(r'[a-z][a-z0-9_]{0,39}', name) or not re.fullmatch(r'(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}', mac):
             raise ValueError('Invalid Bluetooth allowlist')
     return data
 
@@ -79,11 +85,34 @@ def execute(action: str, request: dict, config: dict):
 
 
 class Dispatcher:
-    def __init__(self, config: dict, executor=execute):
+    def __init__(self, config: dict, executor=execute, cache: Path | None = None):
         self.config = config
         self.executor = executor
-        self.seen: dict[str, float] = {}
+        self.cache = cache  # persisted so a restart cannot re-run a captured, unexpired request
+        self.seen: dict[str, float] = self._load()
         self.pending = queue.Queue(maxsize=16)
+
+    def _load(self) -> dict[str, float]:
+        if not self.cache or not self.cache.is_file() or self.cache.is_symlink():
+            return {}
+        try:
+            data = json.loads(self.cache.read_text())
+            now = time.time()
+            return {k: float(v) for k, v in data.items()
+                    if isinstance(k, str) and isinstance(v, (int, float)) and v > now}
+        except (OSError, ValueError, AttributeError):
+            return {}
+
+    def _persist(self):
+        if not self.cache:
+            return
+        temporary = self.cache.with_name('.' + self.cache.name + '.tmp')
+        fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o600)
+        with os.fdopen(fd, 'w') as stream:
+            json.dump(self.seen, stream)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, self.cache)
 
     def receive(self, topic: str, payload: bytes, retained=False):
         if retained:
@@ -95,8 +124,14 @@ class Dispatcher:
             raise ValueError('Duplicate request')
         if len(self.seen) >= 1024:
             raise ValueError('Rate limit')
-        self.pending.put_nowait((action, request))
         self.seen[request['request_id']] = request['expires']
+        self._persist()  # record before queueing: a crash after enqueue still blocks replay
+        try:
+            self.pending.put_nowait((action, request))
+        except queue.Full:
+            del self.seen[request['request_id']]  # rejected, not executed: do not consume the ID
+            self._persist()
+            raise
 
     def worker(self):
         while True:  # One systemd-owned worker; every external command has a timeout.
@@ -105,7 +140,7 @@ class Dispatcher:
                 validate('ha/actions/' + action, json.dumps(request).encode(), self.config)
                 self.executor(action, request, self.config)
                 LOG.info('Action completed: %s', action)
-            except (ValueError, OSError, subprocess.SubprocessError):
+            except Exception:  # noqa: BLE001 - the single worker must survive any request
                 LOG.warning('Action failed or expired; details suppressed')
             finally:
                 self.pending.task_done()
@@ -141,7 +176,8 @@ def main():
             print('SUCCESS: private action configuration valid; no connection or command issued')
             return 0
         import paho.mqtt.client as mqtt
-        dispatcher = Dispatcher(config)
+        state = os.environ.get('STATE_DIRECTORY', '').split(':')[0]
+        dispatcher = Dispatcher(config, cache=Path(state) / 'seen-requests.json' if state else None)
         client = make_client(config, dispatcher, mqtt)
         threading.Thread(target=dispatcher.worker, daemon=True).start()
         client.connect_async(config['mqtt'].get('host', '127.0.0.1'), config['mqtt'].get('port', 1883), keepalive=30)

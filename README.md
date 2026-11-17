@@ -51,7 +51,8 @@ requires a backed-up migration before changing its selections.
 
 For Zigbee follow [docs/ZIGBEE.md](docs/ZIGBEE.md): confirm the exact radio
 variant (all SLZB-07 variants share one CP2102N USB bridge; MG21/MG24/MG26 use
-`--zigbee-adapter ember`, p7/p10 use `zstack`), pass the stable
+`--zigbee-adapter ember --zigbee-rtscts true`, p7/p10 use `zstack` with
+`--zigbee-rtscts false`), pass the stable
 `/dev/serial/by-id/` link as `--zigbee-device`, and add `--zigbee-network new`
 only if the stick holds no network you need: the first start forms a new network
 and replaces any existing one. No firmware is flashed. Verify MQTT -> Z2M -> HA

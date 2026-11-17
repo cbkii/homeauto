@@ -10,7 +10,7 @@ import sys
 import tempfile
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'lib'))
 from homeauto import atomic, compose, operation_lock, owned_services, run, state
-from backup import create_backup
+from backup import Interrupted, create_backup, install_signal_handlers
 from install import _apply
 
 LOG = logging.getLogger('homeauto-upgrade')
@@ -23,6 +23,7 @@ def main():
     parser.add_argument('--candidate', type=Path, required=True)
     parser.add_argument('--apply', action='store_true')
     args = parser.parse_args()
+    install_signal_handlers()  # SIGTERM during the checkpoint must still resume services
     try:
         state(args.data_dir)
         if args.candidate.is_symlink() or not args.candidate.is_file():
@@ -62,6 +63,9 @@ def main():
                 return 2
             LOG.info('Services healthy; complete functional/reboot/restore acceptance. Backup: %s', archive)
             return 0
+    except Interrupted:
+        LOG.error('INTERRUPTED: upgrade not applied; services resumed (run backup.py --resume if any remain stopped)')
+        return 5
     except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired):
         LOG.error('STOP: upgrade incomplete; inspect private local state. No automatic data/schema downgrade attempted.')
         return 2

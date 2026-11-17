@@ -2,6 +2,7 @@
 """Verify and optionally restore bytes into an unoccupied directory. Never start services."""
 from __future__ import annotations
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path, PurePosixPath
@@ -61,11 +62,13 @@ def verify(archive: Path) -> dict:
         return manifest
 
 
-def restore(archive: Path, destination: Path):
+def restore(archive: Path, destination: Path, *, _after_verify=None):
     safe_root(destination)
-    if destination.exists() or not destination.parent.is_dir():
+    if '..' in destination.parts or destination.exists() or not destination.parent.is_dir():
         raise ValueError('Restore destination must be unoccupied with an existing parent')
     manifest = verify(archive)
+    if _after_verify:
+        _after_verify()  # test hook: simulate the archive being replaced after verification
     staging = Path(tempfile.mkdtemp(prefix='.homeauto-restore-', dir=destination.parent))
     try:
         with tarfile.open(archive, 'r:gz') as tar:
@@ -74,9 +77,18 @@ def restore(archive: Path, destination: Path):
             for relative, evidence in manifest['files'].items():
                 path = staging / relative
                 path.parent.mkdir(parents=True, exist_ok=True)
-                # Copy verified regular file bytes; tar extraction cannot create links/devices.
-                with tar.extractfile('state/' + relative) as source, path.open('xb') as target:
-                    shutil.copyfileobj(source, target)
+                # Re-hash while copying: the archive may have changed since verify() ran.
+                member = tar.getmember('state/' + relative)
+                if not member.isfile() or member.size != evidence['size']:
+                    raise ValueError('Archive changed after verification (type/size)')
+                digest, copied = hashlib.sha256(), 0
+                with tar.extractfile(member) as source, path.open('xb') as target:
+                    for block in iter(lambda: source.read(1024 * 1024), b''):
+                        digest.update(block)
+                        copied += len(block)
+                        target.write(block)
+                if copied != evidence['size'] or digest.hexdigest() != evidence['sha256']:
+                    raise ValueError('Archive changed after verification (hash)')
                 os.chmod(path, evidence['mode'])
                 if os.geteuid() == 0:
                     os.chown(path, evidence['uid'], evidence['gid'])

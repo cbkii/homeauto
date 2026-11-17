@@ -53,6 +53,10 @@ class HealthTests(unittest.TestCase):
         rows = self.evaluate(services={**facts()['services'], 'homeassistant': dict(State='running', Health='unhealthy')})
         self.assertEqual(rows['service-homeassistant'], 'FAIL')
 
+    def test_interrupted_backup_marker_fails(self):
+        self.assertEqual(self.evaluate(stopped_marker=True)['backup-interrupted'], 'FAIL')
+        self.assertNotIn('backup-interrupted', self.evaluate())
+
     def test_backup_staleness_and_missing_copy(self):
         self.assertEqual(self.evaluate(backup_age_hours=None)['backup'], 'FAIL')
         self.assertEqual(self.evaluate(backup_age_hours=40)['backup'], 'FAIL')

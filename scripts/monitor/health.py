@@ -39,6 +39,9 @@ def evaluate(facts: dict, *, backup_max_hours: float, copy_max_hours: float) -> 
     def add(check, status, detail):
         rows.append(dict(check=check, status=status, detail=detail))
     services = facts['services']
+    if facts.get('stopped_marker'):
+        add('backup-interrupted', 'FAIL', 'a killed backup left services stopped: '
+            'run backup.py --data-dir <root> --resume')
     for name in CORE:
         row = services.get(name, {})
         ok = row.get('State') == 'running' and row.get('Health') in {'healthy', '', None}
@@ -90,7 +93,8 @@ def collect(root: Path, backup_dir: Path) -> dict:
                 hci_present=any(Path('/sys/class/bluetooth').glob('hci*')),
                 free_bytes=usage.free, total_bytes=usage.total,
                 backup_age_hours=age_hours(backup_dir / 'last-success.json', now),
-                copy_age_hours=age_hours(backup_dir / 'last-offdevice.json', now))
+                copy_age_hours=age_hours(backup_dir / 'last-offdevice.json', now),
+                stopped_marker=(root / '.backup-stopped.json').exists())
 
 
 def publish(root: Path, summary: dict) -> bool:
