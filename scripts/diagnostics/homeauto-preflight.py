@@ -6,6 +6,7 @@ import argparse
 import json
 import os
 import platform
+import re
 import shutil
 import subprocess
 import sys
@@ -18,7 +19,41 @@ PORTS = {'homeassistant': 8123, 'mosquitto': 1883, 'zigbee': 8080,
          'mariadb': 3306, 'esphome': 6052, 'nodered': 1880}
 
 
-def checks(facts: dict, profiles: set[str]) -> list[dict]:
+# SMLIGHT SLZB-07 family: every variant uses the same CP2102N bridge, so VID:PID cannot
+# identify the radio. Variant naming per smlight.tech product pages (checked 2026-11-17).
+SLZB07_VARIANTS = {'': ('EFR32MG21', 'ember'), 'mg24': ('EFR32MG24', 'ember'),
+                   'mg26': ('EFR32MG26', 'ember'), 'p7': ('CC2652P7', 'zstack'),
+                   'p10': ('CC2674P10', 'zstack')}
+
+
+def variant_hint(product: str | None):
+    """Map a USB product descriptor to (variant, radio, adapter); None when unrecognised."""
+    match = re.search(r'SLZB-07(Mg24|Mg26|p7|p10)?(?![A-Za-z0-9])', product or '', re.IGNORECASE)
+    if not match:
+        return None
+    suffix = (match.group(1) or '').lower()
+    return ('SLZB-07' + (match.group(1) or ''),) + SLZB07_VARIANTS[suffix]
+
+
+def usb_descriptor(serial: Path) -> dict | None:
+    """Read-only sysfs walk from the tty to its USB device; serial number never read."""
+    try:
+        node = (Path('/sys/class/tty') / serial.resolve().name / 'device').resolve()
+    except OSError:
+        return None
+    while node != node.parent and not (node / 'idVendor').is_file():
+        node = node.parent
+    if not (node / 'idVendor').is_file():
+        return None
+    def attr(name):
+        path = node / name
+        value = path.read_text(errors='replace').strip() if path.is_file() else ''
+        return re.sub(r'[^A-Za-z0-9 ._-]', '', value)[:64]
+    return dict(vid=attr('idVendor'), pid=attr('idProduct'), manufacturer=attr('manufacturer'),
+                product=attr('product'))
+
+
+def checks(facts: dict, profiles: set[str], adapter: str = '') -> list[dict]:
     rows = []
     def add(name, status, detail):
         rows.append(dict(check=name, status=status, detail=detail))
@@ -53,6 +88,20 @@ def checks(facts: dict, profiles: set[str]) -> list[dict]:
         add('serial-owner', 'BLOCK' if facts['serial_busy'] else 'WARN',
             'Another process holds serial device' if facts['serial_busy'] else
             'No holder found or insufficient permissions; verify exclusive ownership before initialisation')
+        descriptor = facts.get('serial_descriptor')
+        hint = variant_hint(descriptor and descriptor['product'])
+        if facts['serial_present'] and hint and adapter and hint[2] != adapter:
+            add('coordinator-variant', 'BLOCK', f'USB descriptor reports {hint[0]} ({hint[1]}, adapter {hint[2]}); '
+                f'declared adapter {adapter} does not match. Confirm label/firmware; no radio was contacted')
+        elif facts['serial_present'] and hint:
+            add('coordinator-variant', 'PASS' if adapter else 'WARN',
+                f'USB descriptor reports {hint[0]} ({hint[1]}, adapter {hint[2]})' +
+                ('' if adapter else '; declare --zigbee-adapter') +
+                '; firmware type/version and network state verified only by Zigbee2MQTT start')
+        elif facts['serial_present']:
+            add('coordinator-variant', 'WARN', 'USB descriptor ' +
+                (f"{descriptor['vid']}:{descriptor['pid']} '{descriptor['product']}'" if descriptor else 'unreadable') +
+                ' does not identify the radio; confirm SKU label and firmware before declaring an adapter')
     if 'extras' in profiles:
         needed |= {'esphome', 'nodered'}
     if 'mariadb' in profiles:
@@ -152,6 +201,7 @@ def collect(root: Path, serial: str) -> dict:
                 free_bytes=shutil.disk_usage(existing).free, writable=os.access(existing, os.W_OK),
                 ntp=bool(ntp and ntp.returncode == 0 and ntp.stdout.strip() == 'yes'), ports=ports,
                 serial_present=present, serial_busy=bool(holder and holder.returncode == 0),
+                serial_descriptor=usb_descriptor(serial_path) if present else None,
                 interfaces=sorted(p.name for p in Path('/sys/class/net').glob('*')), usb=sorted(usb))
 
 
@@ -161,13 +211,14 @@ def main() -> int:
     parser.add_argument('--data-dir', type=Path, default=Path('/srv/homeauto'))
     parser.add_argument('--profiles', default='')
     parser.add_argument('--zigbee-device', default='')
+    parser.add_argument('--zigbee-adapter', choices=['', 'ember', 'zstack'], default='')
     args = parser.parse_args()
     profiles = set(filter(None, args.profiles.split(',')))
     if profiles - {'zigbee', 'extras', 'mariadb', 'actions'}:
         parser.error('Unknown profile')
     try:
         safe_root(args.data_dir)
-        rows = checks(collect(args.data_dir, args.zigbee_device), profiles)
+        rows = checks(collect(args.data_dir, args.zigbee_device), profiles, args.zigbee_adapter)
         code = 2 if any(r['status'] == 'BLOCK' for r in rows) else 1 if any(r['status'] == 'WARN' for r in rows) else 0
         report = dict(schema=1, exit_code=code, checks=rows)
     except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired) as exc:

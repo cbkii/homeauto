@@ -36,8 +36,20 @@ def write(path: Path, content: str, mode=0o600, gid=None):
         os.chown(path, -1, gid)
 
 
+Z2M_SETTINGS_VERSION = 5  # zigbee2mqtt 2.14.3 settings.CURRENT_VERSION; avoids v1->v5 migration.
+NETWORK_ACK = ('Zigbee needs --zigbee-network new: the first Zigbee2MQTT start forms a network from '
+               'generated parameters and replaces any network already on that coordinator. To keep an '
+               'existing network, follow docs/ZIGBEE.md instead')
+
+
+def zigbee_first_start(root: Path) -> bool:
+    """Z2M writes these after it has formed/adopted a network; absent means first start."""
+    data = root / 'zigbee2mqtt'
+    return not ((data / 'coordinator_backup.json').exists() or (data / 'database.db').exists())
+
+
 def prepare(root: Path, profiles: list[str], device: str, adapter: str, bluetooth: bool,
-            project: str, timezone: str) -> bool:
+            project: str, timezone: str, zigbee_network: str = '') -> bool:
     safe_root(root)
     if root.exists():
         current = state(root)
@@ -47,6 +59,8 @@ def prepare(root: Path, profiles: list[str], device: str, adapter: str, bluetoot
             raise ValueError('Coordinator change requires explicit migration; existing network preserved')
         if adapter and adapter != current.get('zigbee_adapter'):
             raise ValueError('Adapter differs from stored coordinator; existing network preserved')
+        if zigbee_network and zigbee_network != current.get('zigbee_network'):
+            raise ValueError('Zigbee network decision is recorded once; existing state preserved')
         LOG.info('Prepared state already exists; no credentials/configuration changed')
         return False
     if not root.parent.is_dir():
@@ -54,6 +68,10 @@ def prepare(root: Path, profiles: list[str], device: str, adapter: str, bluetoot
     if 'zigbee' in profiles:
         if not device.startswith('/dev/serial/by-id/') or adapter not in {'ember', 'zstack'}:
             raise ValueError('Zigbee needs a stable by-id path and explicitly verified ember/zstack variant')
+        if zigbee_network != 'new':
+            raise ValueError(NETWORK_ACK)
+    elif zigbee_network:
+        raise ValueError('--zigbee-network applies only to the zigbee profile')
     if not re.fullmatch(r'[a-z][a-z0-9_-]{2,40}', project):
         raise ValueError('Invalid Compose project name')
     if not re.fullmatch(r'[A-Za-z0-9_+/-]+', timezone) or not (Path('/usr/share/zoneinfo') / timezone).is_file():
@@ -81,8 +99,8 @@ def prepare(root: Path, profiles: list[str], device: str, adapter: str, bluetoot
         write(staging / 'mosquitto/config/passwd', passwd, 0o640, 1883)
         acl = ('user ha\ntopic readwrite homeassistant/#\ntopic readwrite zigbee2mqtt/#\n'
                'topic read homeauto/#\ntopic write ha/actions/#\n\n'
-               'user zigbee\ntopic readwrite zigbee2mqtt/#\ntopic write homeassistant/#\n'
-               'topic read homeassistant/status\n\n'
+               # Z2M subscribes to homeassistant/# during discovery to clear stale entities.
+               'user zigbee\ntopic readwrite zigbee2mqtt/#\ntopic readwrite homeassistant/#\n\n'
                'user bridge\ntopic read ha/actions/#\ntopic write homeauto/bridge/#\n\n'
                'user health\ntopic write homeauto/health\n')
         write(staging / 'mosquitto/config/acl', acl, 0o640, 1883)
@@ -93,7 +111,7 @@ def prepare(root: Path, profiles: list[str], device: str, adapter: str, bluetoot
         write(staging / 'ha/scripts.yaml', '{}\n')
         write(staging / 'ha/scenes.yaml', '[]\n')
         if 'zigbee' in profiles:
-            z2m = dict(homeassistant={'enabled': True}, frontend={'enabled': True, 'port': 8080},
+            z2m = dict(version=Z2M_SETTINGS_VERSION, homeassistant={'enabled': True}, frontend={'enabled': True, 'port': 8080},
                        mqtt={'server': 'mqtt://mosquitto:1883', 'user': 'zigbee', 'password': credentials['zigbee']},
                        serial={'port': '/dev/zigbee', 'adapter': adapter},
                        advanced={'network_key': list(secrets.token_bytes(16)),
@@ -105,7 +123,8 @@ def prepare(root: Path, profiles: list[str], device: str, adapter: str, bluetoot
         write(staging / 'compose.yaml', (REPO / 'docker-compose.yml').read_text())
         write(staging / 'compose.bluetooth.yaml', (REPO / 'deploy/q8b/compose.bluetooth.yaml').read_text())
         marker = dict(schema=1, data_dir=str(root), profiles=profiles, project=project,
-                      bluetooth=bluetooth, zigbee_device=device, zigbee_adapter=adapter)
+                      bluetooth=bluetooth, zigbee_device=device, zigbee_adapter=adapter,
+                      zigbee_network=zigbee_network)
         write(staging / '.homeauto.json', json.dumps(marker, indent=2) + '\n')
         # Never replace an occupied root. mkdir/rename race is prevented by exclusive lock.
         lock = root.parent / ('.' + root.name + '.homeauto-prepare.lock')
@@ -147,8 +166,14 @@ def apply(root: Path) -> int:
     if 'extras' in current['profiles']:
         selections.append(['esphome', 'nodered'])
     if 'zigbee' in current['profiles']:
-        result = run(command + ['--profiles', 'zigbee', '--zigbee-device', current['zigbee_device']], timeout=180)
-        if result.returncode in {0, 1}:
+        result = run(command + ['--profiles', 'zigbee', '--zigbee-device', current['zigbee_device'],
+                                '--zigbee-adapter', current.get('zigbee_adapter', '')], timeout=180)
+        if zigbee_first_start(root) and current.get('zigbee_network') != 'new':
+            # Roots prepared before the acknowledgement existed: never let a first start
+            # overwrite an unknown coordinator network.
+            LOG.warning('Zigbee first start blocked: network decision not recorded; HA/MQTT core remains running')
+            optional_failed = True
+        elif result.returncode in {0, 1}:
             selections.append(['zigbee2mqtt'])
         else:
             print(result.stdout, end='')
@@ -178,6 +203,8 @@ def main() -> int:
     parser.add_argument('--with-bluetooth', action='store_true')
     parser.add_argument('--zigbee-device', default='')
     parser.add_argument('--zigbee-adapter', choices=['ember', 'zstack'], default='')
+    parser.add_argument('--zigbee-network', choices=['new'], default='',
+                        help='Acknowledge that first start forms a new network on the coordinator')
     parser.add_argument('--project', default='homeauto')
     parser.add_argument('--timezone', default='Australia/Sydney')
     parser.add_argument('--generate-secrets', action='store_true', help='Compatibility: prepare always generates once')
@@ -193,10 +220,11 @@ def main() -> int:
         if args.preflight_only:
             return subprocess.call([sys.executable, str(REPO / 'scripts/diagnostics/homeauto-preflight.py'),
                                     '--data-dir', str(root), '--profiles', ','.join(sorted(profiles)),
-                                    '--zigbee-device', args.zigbee_device])
+                                    '--zigbee-device', args.zigbee_device,
+                                    '--zigbee-adapter', args.zigbee_adapter])
         if args.prepare:
             prepare(root, sorted(profiles), args.zigbee_device, args.zigbee_adapter,
-                    args.with_bluetooth, args.project, args.timezone)
+                    args.with_bluetooth, args.project, args.timezone, args.zigbee_network)
             return 0
         if args.apply:
             return apply(root)
@@ -207,7 +235,11 @@ def main() -> int:
               'Docker absent: inspect dpkg and apt-get -s install docker.io docker-compose; '
               'choose Debian or CE track explicitly. Never auto-remove containerd/runc.')
         return 0
-    except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
+    except ValueError as exc:
+        # Our own fixed refusal messages; they never contain credentials or command output.
+        LOG.error('STOP: %s. No state changed.', exc)
+        return 2
+    except (OSError, subprocess.TimeoutExpired) as exc:
         LOG.error('STOP: %s; credentials and external output suppressed', type(exc).__name__)
         return 2
 

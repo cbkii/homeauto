@@ -22,11 +22,23 @@ unqualified. Missing optional peripherals must not prevent HA/MQTT startup.
 | Read-only preflight | BLOCKED: not run on host | Current OS/runtime/storage/ports report |
 | Docker ARM64 runtime | BLOCKED | Coherent package plan, disposable container/network test |
 | HA and authenticated MQTT | BLOCKED | UI onboarding plus publish/subscribe round trip |
-| Coordinator identity | UNKNOWN | Physical SKU/firmware, correct ember or zstack driver |
-| Zigbee event | BLOCKED | End-device event received by HA |
+| Coordinator identity | UNKNOWN | Label + preflight `coordinator-variant`; Z2M bridge info (type/firmware) |
+| Zigbee network decision | UNKNOWN | Stick holds no needed network (`--zigbee-network new`) or manual adoption |
+| Zigbee event | BLOCKED | `commissioning.py --device ... --ha-entity ...` all stages PASS |
 | Optional device loss | BLOCKED | Dongle absent; HA and MQTT still running |
 | Recovery | BLOCKED | Private backup restored on isolated target, off-NVMe copy |
 | Persistence | BLOCKED | Warm/cold boot, unchanged SSH/NVMe/LAN, service health |
+
+Acceptance tiers, each requiring timestamped evidence from the previous one:
+
+1. **Repo validated**: CI green (ShellCheck, unit tests, 16 Compose combinations,
+   real broker/ACL, Z2M schema, backup/restore, ARM64 manifests). Not device evidence.
+2. **Q8B core running**: preflight report, `install.sh --apply` core healthy, HA
+   MQTT integration added, `commissioning.py` `mqtt` PASS.
+3. **Zigbee event reaches HA**: `commissioning.py` with `--device` and `--ha-entity`
+   all stages PASS on the Q8B.
+4. **Resilience**: dongle-absent core start, warm/cold reboot, backup, isolated
+   restore and off-device copy all rechecked with the same tools.
 
 Do not flash coordinator firmware or guess a serial driver. SMLIGHT uses the
 same USB bridge across different radio variants. Never repair module BTF errors

@@ -49,11 +49,13 @@ is equivalent to `--with-zigbee --with-extras`. `--with-mariadb` provides an
 optional SQL server; it does not change HA's recorder. An existing deployment
 requires a backed-up migration before changing its selections.
 
-For Zigbee confirm the physical SKU and firmware first, find the **exact**
-serial link locally, then supply `--zigbee-device` and `--zigbee-adapter ember`
-(for a verified compatible Silicon Labs radio) or `zstack` (verified TI radio).
-A CP210x USB bridge cannot identify the radio by itself. No firmware is flashed.
-Never pair into a replacement network before backing up an existing mesh.
+For Zigbee follow [docs/ZIGBEE.md](docs/ZIGBEE.md): confirm the exact radio
+variant (all SLZB-07 variants share one CP2102N USB bridge; MG21/MG24/MG26 use
+`--zigbee-adapter ember`, p7/p10 use `zstack`), pass the stable
+`/dev/serial/by-id/` link as `--zigbee-device`, and add `--zigbee-network new`
+only if the stick holds no network you need: the first start forms a new network
+and replaces any existing one. No firmware is flashed. Verify MQTT -> Z2M -> HA
+with the read-only `scripts/smoke/commissioning.py`.
 
 MQTT is published only on loopback by default. Zigbee2MQTT uses the private
 Compose network. Z2M, Node-RED and ESPHome dashboards are loopback only; use SSH
