@@ -4,6 +4,14 @@ Do not run the fresh installer over an existing checkout/data directory. The
 new installer deliberately refuses unmarked occupied roots and preserves old
 HA `.storage`, secrets, SQL history and Zigbee network state.
 
+After pulling this version into a Pi-era checkout, never run plain
+`docker compose up` there: the legacy stack's project is also named `homeauto`.
+The new `docker-compose.yml` refuses to interpolate without the deployment's
+`.env` (`HOMEAUTO_DATA_DIR` is required), and the installer refuses a project
+whose containers belong to another directory, so the running legacy containers
+are left alone. Keep managing them with the archived
+`deploy/legacy/docker-compose.yml` workflow you already use until migration.
+
 1. Record the running checkout commit, exact image IDs, active profiles and
    coordinator identity. Keep that checkout and its original `.env` private.
 2. Take a consistent backup on the old version: stop writers for file copies;
