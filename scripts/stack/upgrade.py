@@ -24,6 +24,7 @@ def main():
     parser.add_argument('--apply', action='store_true')
     args = parser.parse_args()
     install_signal_handlers()  # SIGTERM during the checkpoint must still resume services
+    applying = False
     try:
         state(args.data_dir)
         if args.candidate.is_symlink() or not args.candidate.is_file():
@@ -50,13 +51,16 @@ def main():
             atomic(args.data_dir / 'compose.yaml', candidate)
             try:
                 result = run(compose(args.data_dir, 'pull'), timeout=600)
-            except (OSError, subprocess.TimeoutExpired):
+            except BaseException:
+                # Includes Interrupted: nothing has restarted, so the candidate must not stay
+                # active for a later `install --apply` to pick up silently.
                 atomic(args.data_dir / 'compose.yaml', prior)
                 raise
             if result.returncode:
                 # No services changed; restoring just the old config is still safe here.
                 atomic(args.data_dir / 'compose.yaml', prior)
                 raise RuntimeError('Pull failed before restart; previous configuration restored')
+            applying = True
             code = _apply(args.data_dir)
             if code:
                 LOG.error('Upgrade incomplete. Backup: %s. Do not downgrade images against migrated data.', archive)
@@ -64,7 +68,13 @@ def main():
             LOG.info('Services healthy; complete functional/reboot/restore acceptance. Backup: %s', archive)
             return 0
     except Interrupted:
-        LOG.error('INTERRUPTED: upgrade not applied; services resumed (run backup.py --resume if any remain stopped)')
+        if applying:
+            LOG.error('INTERRUPTED during restart onto the candidate: compose.yaml is the candidate and '
+                      'compose.previous.yaml the prior file. Run install.py --apply to finish, or restore '
+                      'the pre-upgrade backup; no automatic downgrade.')
+        else:
+            LOG.error('INTERRUPTED: upgrade not applied; previous configuration kept '
+                      '(run backup.py --resume if any service remains stopped)')
         return 5
     except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired):
         LOG.error('STOP: upgrade incomplete; inspect private local state. No automatic data/schema downgrade attempted.')

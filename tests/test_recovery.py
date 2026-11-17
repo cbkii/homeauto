@@ -215,6 +215,57 @@ class InterruptAndResumeTests(unittest.TestCase):
         self.assertFalse(list(self.destination.glob('*.tar.gz')))
         self.assertFalse(list(self.destination.glob('.homeauto-*')))
 
+    def _arm_signals(self):
+        import signal
+        import backup
+        backup.install_signal_handlers()
+        for sig, default in [(signal.SIGTERM, signal.SIG_DFL), (signal.SIGINT, signal.default_int_handler),
+                             (signal.SIGHUP, signal.SIG_DFL)]:
+            self.addCleanup(signal.signal, sig, default)
+        return signal, backup
+
+    def test_second_signal_cannot_abort_recovery(self):
+        """Regression: a repeat Ctrl-C/SIGHUP during the finally-resume left services stopped."""
+        signal, backup = self._arm_signals()
+
+        class Twice(FakeRuntime):
+            def stop(self, services):
+                super().stop(services)
+                os.kill(os.getpid(), signal.SIGTERM)
+
+            def start(self, services):
+                os.kill(os.getpid(), signal.SIGINT)  # operator presses Ctrl-C while we recover
+                super().start(services)
+
+        runtime = Twice(['homeassistant', 'mosquitto'])
+        with self.assertRaises(backup.Interrupted) as caught:
+            create_backup(self.root, self.destination, runtime=runtime)
+        self.assertIsNone(caught.exception.archive)
+        self.assertEqual(runtime.running, {'homeassistant', 'mosquitto'})
+        self.assertFalse((self.root / backup.MARKER).exists())
+        self.assertFalse(list(self.destination.glob('*.tar.gz')))
+
+    def test_signal_during_post_publish_restart_still_resumes(self):
+        """Regression: published=True skipped the finally-resume and misreported 'no archive'."""
+        signal, backup = self._arm_signals()
+
+        class LateSignal(FakeRuntime):
+            def start(self, services):
+                if not self.starts:
+                    self.starts.append(list(services))
+                    os.kill(os.getpid(), signal.SIGTERM)  # timeout lands during the health wait
+                super().start(services)
+
+        runtime = LateSignal(['homeassistant', 'mosquitto'])
+        with self.assertRaises(backup.Interrupted) as caught:
+            create_backup(self.root, self.destination, runtime=runtime)
+        archive = caught.exception.archive
+        self.assertTrue(archive and archive.is_file())
+        verify(archive)
+        self.assertEqual(runtime.running, {'homeassistant', 'mosquitto'})
+        self.assertFalse((self.root / backup.MARKER).exists())
+        self.assertFalse((self.destination / 'last-success.json').exists())
+
     def test_marker_written_before_stop_and_left_when_resume_fails(self):
         import backup
         seen = {}

@@ -36,16 +36,24 @@ class RecoveryError(RuntimeError):
 
 class Interrupted(Exception):
     """SIGTERM/SIGINT/SIGHUP during a backup: unwind through finally and resume services."""
+    archive = None  # set when a verified archive was already published
+
+
+SIGNALS = (signal.SIGTERM, signal.SIGINT, signal.SIGHUP)
 
 
 def _interrupt(signum, frame):
+    # Ignore repeats so a second Ctrl-C/SIGHUP cannot abort the resume in `finally`;
+    # systemd's SIGKILL + ExecStopPost --resume remains the backstop.
+    for sig in SIGNALS:
+        signal.signal(sig, signal.SIG_IGN)
     raise Interrupted(signal.Signals(signum).name)
 
 
 def install_signal_handlers():
     # Python's default SIGTERM action kills the process without running finally blocks,
     # which would leave Home Assistant stopped after a systemd timeout or shutdown.
-    for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+    for sig in SIGNALS:
         signal.signal(sig, _interrupt)
 
 
@@ -233,6 +241,7 @@ def create_backup(root: Path, destination: Path, *, runtime=None, offline=False,
         temporary = destination / ('.' + name)
         archive = destination / name
         published = False
+        resumed = False  # False: finally must (re)start `running`; True/None: handled already
         stopped_marker = bool(running) and not offline
         try:
             images = runtime.images()
@@ -262,7 +271,9 @@ def create_backup(root: Path, destination: Path, *, runtime=None, offline=False,
             published = True
             try:
                 runtime.start(running)
+                resumed = True
             except (OSError, RuntimeError, subprocess.TimeoutExpired) as exc:
+                resumed = None  # attempted and failed: leave marker for --resume, no second wait
                 raise RecoveryError(archive) from exc
             if stopped_marker:
                 (root / MARKER).unlink(missing_ok=True)
@@ -270,9 +281,12 @@ def create_backup(root: Path, destination: Path, *, runtime=None, offline=False,
                 schema=1, created_utc=datetime.now(timezone.utc).isoformat(), archive=archive.name)) + '\n')
             LOG.info('SUCCESS: private verified archive %s; copy off-device and rehearse restore', archive)
             return archive
+        except Interrupted as exc:
+            exc.archive = archive if published else None
+            raise
         finally:
             try:
-                if not published:
+                if resumed is False:
                     runtime.start(running)
                     if stopped_marker:
                         (root / MARKER).unlink(missing_ok=True)
@@ -329,8 +343,10 @@ def main():
                     return 4
         return 0
     except Interrupted as exc:
-        LOG.error('INTERRUPTED (%s): no archive published; original services resumed%s', exc,
-                  '' if not (args.data_dir / MARKER).exists() else ' FAILED - run backup.py --resume')
+        LOG.error('INTERRUPTED (%s): %s; original services %s', exc,
+                  f'verified archive {exc.archive.name} kept (success marker not updated)' if exc.archive
+                  else 'no archive published',
+                  'resume FAILED - run backup.py --resume' if (args.data_dir / MARKER).exists() else 'resumed')
         return 5
     except RecoveryError as exc:
         LOG.error('FAILED: archive %s verified, but original services did not recover healthy; '
