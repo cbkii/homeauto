@@ -170,9 +170,9 @@ class UnitTests(unittest.TestCase):
                 paths.append(str(path))
             result = subprocess.run(['systemd-analyze', 'verify', '--man=no', *paths],
                                     capture_output=True, text=True, timeout=60)
+            # Runner images emit diagnostics about their own units (netplan, snapd); judge only ours.
             problems = [l for l in result.stderr.splitlines()
-                        if 'docker.service' not in l and 'Executable' not in l and 'not executable' not in l
-                        and l.strip()]
+                        if ('homeauto-' in l or temp in l) and 'docker.service' not in l]
             self.assertFalse(problems, '\n'.join(problems))
 
 
