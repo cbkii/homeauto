@@ -1,7 +1,7 @@
 # Operations
 
-Start with [README](../README.md). All commands use the persisted project and
-external data directory, independent of the caller's current directory.
+Start with [README](../README.md). Commands use the persisted project and
+external data directory; run them from the project checkout.
 
 ```bash
 sudo ./scripts/stack/compose.sh status
@@ -35,7 +35,9 @@ their original checkout until the [legacy migration](LEGACY_MIGRATION.md) passes
 
 Do not downgrade against a migrated database. Keep exact image/configuration/data
 versions together. `./update.sh --pull-only` stages only the persisted version
-tags, without restarting; see the recovery runbook before changing them.
+tags, without restarting. Do not restart onto new images until a verified backup
+exists and its isolated restore has been rehearsed (recovery runbook:
+`docs/RECOVERY.md`, delivered with the recovery change).
 
 Backups/restoration and staged upgrades are required before production promotion.
 Record backup location and off-device copy, not secrets, in acceptance evidence.

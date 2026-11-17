@@ -35,7 +35,6 @@ Workflow expectations for contributors using GitHub tooling.
 ## Verification
 ```bash
 ./scripts/qa.sh                                          # shellcheck + compose validate
-./scripts/smoke/run_release_smoke.sh --mode verify       # non-destructive host check
-sudo ./scripts/smoke/run_release_smoke.sh --mode full    # full lifecycle (target host)
+./scripts/smoke/run_release_smoke.sh --mode verify       # non-destructive, read-only report
 ```
-Full procedure: `docs/SMOKE_TEST_RUNBOOK.md`
+Lifecycle qualification is the manual runbook `docs/SMOKE_TEST_RUNBOOK.md` (no automated `--mode full`).
