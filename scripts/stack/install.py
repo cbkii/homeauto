@@ -96,7 +96,6 @@ def prepare(root: Path, profiles: list[str], device: str, adapter: str, bluetoot
         write(staging / 'secrets.json', json.dumps(credentials, indent=2) + '\n')
         for name in ['db_root', 'db_user']:
             write(staging / 'private' / name, credentials[name] + '\n')
-        write(staging / 'private/db_backup.cnf', '[client]\nuser=root\npassword=' + credentials['db_root'] + '\n')
         passwd = ''.join(user + ':' + password_hash(credentials[user]) + '\n'
                          for user in ['ha', 'zigbee', 'bridge', 'health'])
         write(staging / 'mosquitto/config/passwd', passwd, 0o640, 1883)

@@ -47,3 +47,50 @@ class ActionTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class BridgeHardeningTests(unittest.TestCase):
+    def config(self, **tv):
+        return dict(mqtt=dict(username='bridge', password='x'), tv={'lounge': dict(host='192.168.1.20', **tv)},
+                    bluetooth={})
+
+    def test_numeric_or_malformed_targets_rejected_at_config_load(self):
+        import json, tempfile
+        for bad in [dict(host=3232235796), dict(host='192.168.1.20', port='5555'),
+                    dict(host='192.168.1.20', port=True), dict(host='192.168.1.20', packages='com.x'),
+                    dict(host='8.8.8.8')]:
+            data = self.config(); data['tv']['lounge'] = bad
+            with tempfile.TemporaryDirectory() as temp:
+                path = Path(temp) / 'a.json'; path.write_text(json.dumps(data)); path.chmod(0o600)
+                with self.assertRaises((ValueError, TypeError), msg=str(bad)):
+                    bridge.config_read(path)
+
+    def test_worker_survives_unexpected_executor_errors(self):
+        import threading, time
+        calls = []
+        def executor(action, request, config):
+            calls.append(request['request_id'])
+            if len(calls) == 1:
+                raise TypeError('unexpected')
+        dispatcher = bridge.Dispatcher(self.config(), executor=executor)
+        threading.Thread(target=dispatcher.worker, daemon=True).start()
+        for rid in ['first_request_1', 'second_request_2']:
+            dispatcher.receive('ha/actions/tv_home', json.dumps(
+                dict(target='lounge', request_id=rid, expires=time.time() + 30)).encode())
+        dispatcher.pending.join()
+        self.assertEqual(calls, ['first_request_1', 'second_request_2'])
+
+    def test_replay_rejected_across_restart_and_cache_private(self):
+        import tempfile, time
+        with tempfile.TemporaryDirectory() as temp:
+            cache = Path(temp) / 'seen-requests.json'
+            payload = json.dumps(dict(target='lounge', request_id='captured_req_1', expires=time.time() + 30)).encode()
+            bridge.Dispatcher(self.config(), cache=cache).receive('ha/actions/tv_home', payload)
+            self.assertEqual(cache.stat().st_mode & 0o777, 0o600)
+            restarted = bridge.Dispatcher(self.config(), cache=cache)
+            with self.assertRaises(ValueError):
+                restarted.receive('ha/actions/tv_home', payload)
+            cache.write_text('{"old_req_000001": 1}')  # expired entries are dropped on load
+            self.assertEqual(bridge.Dispatcher(self.config(), cache=cache).seen, {})
+            cache.write_text('not json')
+            self.assertEqual(bridge.Dispatcher(self.config(), cache=cache).seen, {})

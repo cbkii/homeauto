@@ -24,9 +24,21 @@ this host backup also preserves MQTT/Zigbee and deployment state.
 DB in online mode is a failure. Failed dumps/stops/restore checks publish no
 successful new archive. Exit codes: `0` archive verified and original services
 healthy; `2` no archive published; `3` archive verified and kept, but original
-services did not return healthy within 6 minutes. On `3`, `last-success.json` is
-not updated and retention is not pruned: run `manage.py status`, recover service
-locally, then treat the named archive as usable.
+services did not return healthy within 6 minutes; `4` (with `--copy-to`) local
+archive good, off-device copy failed; `5` interrupted by SIGTERM/SIGINT/SIGHUP,
+nothing published, services resumed. On `3`, `last-success.json` is not updated
+and retention is not pruned.
+
+Before stopping anything the backup records the services it will stop in
+`<data-dir>/.backup-stopped.json` (never archived). Normal completion and
+in-process interruption remove it after restarting them. If the process is
+killed (SIGKILL, OOM, power loss) the marker remains and
+`backup.py --data-dir <root> --resume` restarts exactly those services; the
+systemd unit runs this as `ExecStopPost`, so a timeout or kill under systemd
+recovers automatically. Stale private staging from a killed run is removed by
+the next backup after 6 hours. MariaDB is dumped with credentials fed on stdin
+from the existing `private/db_root`; no extra secret is required, so roots
+prepared by earlier releases back up unchanged.
 The archive and staging are private (0600/0700); successful archives have per-file
 SHA256, modes, ownership, configuration and image evidence. These hashes detect
 corruption; they are not a signature against an attacker replacing the archive.
@@ -80,15 +92,25 @@ The repo checkout must be at a stable location accessible to the unit (for examp
 `/opt/homeauto`). Keep it there while the timer is installed.
 
 ```bash
-sudo bash scripts/stack/backup-schedule-install.sh --apply
-sudo systemctl enable --now homeauto-backup.timer
-systemctl status homeauto-backup.timer --no-pager
-journalctl -u homeauto-backup.service --no-pager
+sudo python3 scripts/stack/schedule.py --apply --data-dir /srv/homeauto --backup-dir /srv/homeauto-backups
+sudo systemctl start homeauto-backup.service        # manual test under the real sandbox FIRST
+journalctl -u homeauto-backup.service --no-pager -n 20
+sudo python3 scripts/stack/restore.py /srv/homeauto-backups/<archive> --destination /srv/homeauto-rehearsal
+sudo systemctl enable --now homeauto-backup.timer   # only after the above pass
 ```
 
-The installer validates complete units and installs the timer **disabled**.
+The installer validates complete units (`systemd-analyze verify`) and installs the
+timer **disabled**. It is all-or-nothing and idempotent: identical managed units
+are a no-op; a differing or foreign unit is refused before anything is written.
+Data and backup paths must be outside `/home`, `/root` and `/run/user`
+(`ProtectHome=read-only`); an existing backup directory must be root-owned 0700.
+The unit allows 45 minutes, then SIGTERM with a 10-minute window for the backup to
+resume services before SIGKILL (`KillMode=mixed`), and `ExecStopPost` covers a kill.
+CI exercises a manual start, a forced timeout and a SIGKILL under real systemd 257
+on Debian 13 (x86); repeat the manual start on the Q8B before enabling the timer.
 Default 03:00 is the host's timezone, with up to ten minutes' jitter and catch-up
 for missed runs; account for brief HA outage. Root is explicit because Docker
 socket access and preserving ownership are root-equivalent operations. The unit
-restricts writes to state/backups and logs to journald. Removal:
-`sudo bash scripts/stack/backup-schedule-remove.sh --apply` (backups retained).
+restricts writes to state/backups and logs to journald. Removal
+(idempotent; only files with the homeauto header are touched; backups retained):
+`sudo python3 scripts/stack/schedule.py --apply --remove`.

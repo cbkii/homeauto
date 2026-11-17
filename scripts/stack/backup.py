@@ -9,6 +9,7 @@ import json
 import logging
 import os
 import shutil
+import signal
 import stat
 import subprocess
 import sys
@@ -21,7 +22,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'lib'))
 from homeauto import atomic, compose, operation_lock, owned_services, run, safe_root, sha256_stream, state
 
 LOG = logging.getLogger('homeauto-backup')
-EXCLUDE = {'.operation.lock'}
+MARKER = '.backup-stopped.json'  # services this backup stopped; survives SIGKILL/power loss
+EXCLUDE = {'.operation.lock', MARKER}
 RECOVERY_SECONDS = 360  # HA start_period 120 s + 6 x 30 s health retries on a large recorder DB.
 
 
@@ -30,6 +32,42 @@ class RecoveryError(RuntimeError):
     def __init__(self, archive: Path):
         super().__init__('Services did not recover after a verified backup')
         self.archive = archive
+
+
+class Interrupted(Exception):
+    """SIGTERM/SIGINT/SIGHUP during a backup: unwind through finally and resume services."""
+
+
+def _interrupt(signum, frame):
+    raise Interrupted(signal.Signals(signum).name)
+
+
+def install_signal_handlers():
+    # Python's default SIGTERM action kills the process without running finally blocks,
+    # which would leave Home Assistant stopped after a systemd timeout or shutdown.
+    for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+        signal.signal(sig, _interrupt)
+
+
+def write_marker(root: Path, services: list[str]):
+    atomic(root / MARKER, json.dumps(dict(schema=1, services=services,
+                                          created_utc=datetime.now(timezone.utc).isoformat())) + '\n')
+
+
+def resume(root: Path, *, runtime=None) -> list[str]:
+    """Start services recorded by an interrupted/killed backup; idempotent no-op otherwise."""
+    marker = root / MARKER
+    if marker.is_symlink():
+        raise ValueError('Symlinked recovery marker refused')
+    if not marker.is_file():
+        return []
+    services = json.loads(marker.read_text())['services']
+    if not isinstance(services, list) or not all(isinstance(s, str) and s.isidentifier() for s in services):
+        raise ValueError('Invalid recovery marker')
+    with operation_lock(root):
+        (runtime or Runtime(root)).start(services)
+        marker.unlink()
+    return services
 
 
 class Runtime:
@@ -71,26 +109,42 @@ class Runtime:
     def start(self, services: list[str]):
         if not services:
             return
-        result = run(compose(self.root, 'start', *services), timeout=180)
-        if result.returncode:
-            raise RuntimeError('Could not resume original services')
+        # After an interrupted `compose stop` the daemon may still be gracefully stopping a
+        # container: an immediate start is then a no-op and the container exits afterwards
+        # (observed under a systemd start timeout). Re-issue start, bounded, whenever a
+        # requested service is found stopped while waiting for health.
+        starts = 0
         deadline = time.monotonic() + RECOVERY_SECONDS
+        pending = list(services)
         while time.monotonic() < deadline:
+            if pending:
+                if starts >= 6:
+                    raise RuntimeError('Could not resume original services')
+                starts += 1
+                if run(compose(self.root, 'start', *pending), timeout=180).returncode:
+                    time.sleep(5)
+                    continue
             rows = {r['Service']: r for r in self.rows()}
             if all(rows.get(s, {}).get('State') == 'running' and
                    rows.get(s, {}).get('Health') in {'healthy', '', None} for s in services):
                 return
+            pending = [s for s in services if rows.get(s, {}).get('State') in {'exited', 'created'}]
             time.sleep(2)
         raise RuntimeError('Original services did not recover healthy state')
 
     def dump(self, path: Path):
-        # File secret keeps the SQL password out of argv, resolved Compose and logs.
-        argv = compose(self.root, 'exec', '-T', '--user', '0', 'mariadb', 'mariadb-dump',
-                       '--defaults-extra-file=/run/secrets/db_backup', '--all-databases',
+        # Option file on stdin keeps the password out of argv/Compose/logs and needs no extra
+        # secret, so roots prepared before this release (db_root only) can still be dumped.
+        password = (self.root / 'private/db_root').read_text().strip()
+        if not password or any(c in password for c in '\r\n'):
+            raise RuntimeError('Database root secret unreadable')
+        argv = compose(self.root, 'exec', '-T', 'mariadb', 'mariadb-dump',
+                       '--defaults-extra-file=/dev/stdin', '--all-databases',
                        '--single-transaction', '--quick', '--routines', '--events')
         with path.open('xb') as stream:
             os.fchmod(stream.fileno(), 0o600)
-            result = subprocess.run(argv, stdout=stream, stderr=subprocess.PIPE, timeout=300, check=False)
+            result = subprocess.run(argv, input=f'[client]\nuser=root\npassword={password}\n'.encode(),
+                                    stdout=stream, stderr=subprocess.PIPE, timeout=600, check=False)
             stream.flush(); os.fsync(stream.fileno())
         if result.returncode or path.stat().st_size < 100:
             raise RuntimeError('Required SQL dump failed or was empty')
@@ -130,11 +184,30 @@ def snapshot(root: Path, staging: Path, images: dict, db_status: str) -> dict:
     return manifest
 
 
+def clean_stale(destination: Path, max_age: float = 6 * 3600) -> int:
+    """Remove private staging/temporary leftovers of killed runs (SIGKILL/power loss)."""
+    removed = 0
+    for path in destination.iterdir():
+        stale = time.time() - path.lstat().st_mtime > max_age
+        if path.is_symlink() or not stale:
+            continue
+        if path.name.startswith('.homeauto-backup-') and path.is_dir():
+            shutil.rmtree(path); removed += 1
+        elif path.name.startswith('.homeauto-') and path.name.endswith('.tar.gz') and path.is_file():
+            path.unlink(); removed += 1
+    return removed
+
+
 def create_backup(root: Path, destination: Path, *, runtime=None, offline=False,
                   dry_run=False, lock_held=False) -> Path | None:
     data = state(root)
-    if not destination.is_absolute() or destination == root or root in destination.parents:
-        raise ValueError('Backup destination must be outside application root')
+    if not destination.is_absolute() or '..' in destination.parts:
+        raise ValueError('Backup destination must be an absolute path without ..')
+    real_dest, real_root = destination.resolve(), root.resolve()
+    if (real_dest == real_root or real_root in real_dest.parents or real_dest in real_root.parents
+            or str(real_dest) in {'/', '/srv', '/var', '/home', '/opt', '/media'}
+            or str(real_dest).startswith('/media/mediasmb')):
+        raise ValueError('Backup destination must be a dedicated directory independent of the application root')
     for path in [destination, *destination.parents]:
         if path.is_symlink():
             raise ValueError('Symlinked backup destination refused')
@@ -154,13 +227,17 @@ def create_backup(root: Path, destination: Path, *, runtime=None, offline=False,
         destination.mkdir(parents=True, exist_ok=True, mode=0o700)
         if destination.stat().st_mode & 0o077:
             raise ValueError('Backup destination must be private (0700)')
+        clean_stale(destination)
         staging = Path(tempfile.mkdtemp(prefix='.homeauto-backup-', dir=destination))
         name = 'homeauto-' + datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ') + '-' + os.urandom(4).hex() + '.tar.gz'
         temporary = destination / ('.' + name)
         archive = destination / name
         published = False
+        stopped_marker = bool(running) and not offline
         try:
             images = runtime.images()
+            if stopped_marker:
+                write_marker(root, running)  # before the first stop: recovery survives SIGKILL
             db_status = 'not-enabled'
             if 'mariadb' in data['profiles']:
                 if offline:
@@ -187,6 +264,8 @@ def create_backup(root: Path, destination: Path, *, runtime=None, offline=False,
                 runtime.start(running)
             except (OSError, RuntimeError, subprocess.TimeoutExpired) as exc:
                 raise RecoveryError(archive) from exc
+            if stopped_marker:
+                (root / MARKER).unlink(missing_ok=True)
             atomic(destination / 'last-success.json', json.dumps(dict(
                 schema=1, created_utc=datetime.now(timezone.utc).isoformat(), archive=archive.name)) + '\n')
             LOG.info('SUCCESS: private verified archive %s; copy off-device and rehearse restore', archive)
@@ -195,10 +274,23 @@ def create_backup(root: Path, destination: Path, *, runtime=None, offline=False,
             try:
                 if not published:
                     runtime.start(running)
+                    if stopped_marker:
+                        (root / MARKER).unlink(missing_ok=True)
             finally:
                 shutil.rmtree(staging)
                 if temporary.exists():
                     temporary.unlink()
+
+
+def prune(destination: Path, keep: int) -> int:
+    """Keep the newest `keep` archives by their UTC timestamped names; never touches other files."""
+    import re
+    archives = sorted(p for p in destination.iterdir()
+                      if re.fullmatch(r'homeauto-\d{8}T\d{6}Z-[0-9a-f]{8}\.tar\.gz', p.name)
+                      and p.is_file() and not p.is_symlink())
+    for old in archives[:-keep]:
+        old.unlink()
+    return max(0, len(archives) - keep)
 
 
 def main():
@@ -207,26 +299,38 @@ def main():
     parser.add_argument('--backup-dir', type=Path, default=Path('/srv/homeauto-backups'))
     parser.add_argument('--offline', action='store_true')
     parser.add_argument('--dry-run', action='store_true')
+    parser.add_argument('--resume', action='store_true',
+                        help='Only restart services left stopped by an interrupted backup (systemd ExecStopPost)')
     parser.add_argument('--keep', type=int, default=7, help='Retain this many completed archives; no deletion on failed backup')
     args = parser.parse_args()
     os.umask(0o077)
+    install_signal_handlers()
     try:
+        if args.resume:
+            services = resume(args.data_dir)
+            LOG.info('RESUMED: %s', ', '.join(services) if services else 'nothing to resume')
+            return 0
         if not 1 <= args.keep <= 365:
             raise ValueError('Retention count must be 1..365')
         completed = create_backup(args.data_dir, args.backup_dir, offline=args.offline, dry_run=args.dry_run)
         if completed:
-            archives = sorted((p for p in args.backup_dir.glob('homeauto-*.tar.gz') if p.is_file() and not p.is_symlink()), key=lambda p: p.stat().st_mtime, reverse=True)
-            from restore import verify
-            for old in archives[args.keep:]:
-                verify(old)
-                old.unlink()
+            try:
+                prune(args.backup_dir, args.keep)
+            except OSError:
+                LOG.warning('Retention pruning incomplete; new verified archive kept')
         return 0
+    except Interrupted as exc:
+        LOG.error('INTERRUPTED (%s): no archive published; original services resumed%s', exc,
+                  '' if not (args.data_dir / MARKER).exists() else ' FAILED - run backup.py --resume')
+        return 5
     except RecoveryError as exc:
         LOG.error('FAILED: archive %s verified, but original services did not recover healthy; '
-                  'run manage.py status and restore service before relying on automation', exc.archive.name)
+                  'run backup.py --resume / manage.py status before relying on automation', exc.archive.name)
         return 3
-    except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired):
-        LOG.error('FAILED: backup incomplete; inspect private state and original service health. No success archive published.')
+    except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired) as exc:
+        LOG.error('FAILED: backup incomplete (%s); no success archive published.%s',
+                  exc if isinstance(exc, ValueError) else type(exc).__name__,
+                  ' Services may be stopped: run backup.py --resume' if (args.data_dir / MARKER).exists() else '')
         return 2
 
 

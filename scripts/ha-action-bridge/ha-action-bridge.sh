@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
 # Legacy broad dispatcher disabled; service uses the bounded Python replacement.
-printf '%s\n' 'STOP: use bridge.py with a private allowlist; see docs/ACTIONS.md' >&2
-exit 2
+# Exit 0: a leftover Pi-era unit with Restart=on-failure must not restart-loop on this shim.
+printf '%s\n' 'NOTICE: legacy dispatcher removed; disable this unit and use bridge.py (docs/ACTIONS.md)' >&2
+exit 0
