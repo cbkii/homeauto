@@ -176,7 +176,7 @@ def prepare(root: Path, profiles: list[str], device: str, adapter: str, bluetoot
                # Z2M subscribes to homeassistant/# during discovery to clear stale entities.
                'user zigbee\ntopic readwrite zigbee2mqtt/#\ntopic readwrite homeassistant/#\n\n'
                'user bridge\ntopic read ha/actions/#\ntopic write homeauto/bridge/#\n\n'
-               'user health\ntopic write homeauto/health\n')
+               'user health\ntopic write homeauto/health/#\n')
         write(staging / 'mosquitto/config/acl', acl, 0o640, 1883)
         write(staging / 'mosquitto/config/mosquitto.conf', (REPO / 'mosquitto/config/mosquitto.conf').read_text(), 0o640, 1883)
         write(staging / 'mosquitto/health/mosquitto_pub', '-u health\n-P ' + credentials['health'] + '\n', 0o640, 1883)

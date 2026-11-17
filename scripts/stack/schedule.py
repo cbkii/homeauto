@@ -22,18 +22,20 @@ SIMPLE = re.compile(r'/[A-Za-z0-9_./-]+')
 HIDDEN = ('/home', '/root', '/run/user')
 
 
-def units(root: Path, destination: Path) -> dict[str, str]:
+def units(root: Path, destination: Path, copy_to: Path | None = None) -> dict[str, str]:
+    extra = f' {copy_to}' if copy_to else ''
+    copy = f' --copy-to {copy_to}' if copy_to else ''
     return {
         'homeauto-backup.service': HEADER + f'''[Unit]
 Description=homeauto consistent private backup (brief HA/MQTT outage)
 After=docker.service
 Requires=docker.service
-RequiresMountsFor={root} {destination}
+RequiresMountsFor={root} {destination}{extra}
 ConditionPathExists={root}/.homeauto.json
 
 [Service]
 Type=oneshot
-ExecStart=/usr/bin/python3 {REPO}/scripts/stack/backup.py --data-dir {root} --backup-dir {destination}
+ExecStart=/usr/bin/python3 {REPO}/scripts/stack/backup.py --data-dir {root} --backup-dir {destination}{copy}
 # Runs after success, failure, timeout or SIGKILL: restarts anything a backup left stopped.
 ExecStopPost=/usr/bin/python3 {REPO}/scripts/stack/backup.py --data-dir {root} --resume
 TimeoutStartSec=45min
@@ -48,7 +50,7 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=read-only
-ReadWritePaths={root} {destination}
+ReadWritePaths={root} {destination}{extra}
 StandardOutput=journal
 StandardError=journal
 ''',
@@ -62,14 +64,44 @@ Persistent=true
 
 [Install]
 WantedBy=timers.target
+''',
+        'homeauto-health.service': HEADER + f'''[Unit]
+Description=homeauto read-only service/USB/storage/backup health
+After=docker.service
+Requires=docker.service
+ConditionPathExists={root}/.homeauto.json
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 {REPO}/scripts/monitor/health.py --data-dir {root} --backup-dir {destination} --publish
+# 1 = optional parts degraded: report, do not mark the unit failed.
+SuccessExitStatus=1
+TimeoutStartSec=120
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+StandardOutput=journal
+StandardError=journal
+''',
+        'homeauto-health.timer': HEADER + '''[Unit]
+Description=homeauto health check every 10 minutes
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=10min
+
+[Install]
+WantedBy=timers.target
 '''}
 
 
-def check_paths(root: Path, destination: Path):
-    for path in (root, destination, REPO):
+def check_paths(root: Path, destination: Path, copy_to: Path | None = None):
+    for path in (root, destination, REPO) + ((copy_to,) if copy_to else ()):
         if not path.is_absolute() or '..' in path.parts or not SIMPLE.fullmatch(str(path)):
             raise ValueError(f'Unit paths must be simple absolute paths without ..: {path}')
-    for path in (root, destination):
+    for path in (root, destination) + ((copy_to,) if copy_to else ()):
         if any(str(path) == h or str(path).startswith(h + '/') for h in HIDDEN):
             raise ValueError(f'{path} is read-only under the unit sandbox (ProtectHome); use e.g. /srv')
     real_root, real_dest = root.resolve(), destination.resolve()
@@ -89,10 +121,14 @@ def prepare_destination(destination: Path):
         destination.mkdir(parents=True, mode=0o700)
 
 
-def install(root: Path, destination: Path, unit_dir: Path = UNIT_DIR, runner=run) -> list[str]:
+def install(root: Path, destination: Path, unit_dir: Path = UNIT_DIR, runner=run,
+            copy_to: Path | None = None) -> list[str]:
     state(root)
-    check_paths(root, destination)
-    values = units(root, destination)
+    check_paths(root, destination, copy_to)
+    if copy_to:
+        from offdevice import check_target
+        check_target(copy_to, [root, destination.parent if not destination.exists() else destination])
+    values = units(root, destination, copy_to)
     with tempfile.TemporaryDirectory() as tmp:
         paths = []
         for name, content in values.items():
@@ -130,10 +166,10 @@ def remove(unit_dir: Path = UNIT_DIR, runner=run) -> list[str]:
     foreign = [p for p in present if not p.read_text().startswith(HEADER)]
     if foreign:
         raise ValueError('Not homeauto-managed, left untouched: ' + ', '.join(p.name for p in foreign))
-    timers = [p.name for p in present if p.name.endswith('.timer')]
+    timers = sorted(p.name for p in present if p.name.endswith('.timer'))
     if timers and runner(['systemctl', 'disable', '--now', *timers]).returncode:
         raise RuntimeError('Could not disable timer; units preserved')
-    services = [p.name for p in present if p.name.endswith('.service')]
+    services = sorted(p.name for p in present if p.name.endswith('.service'))
     if services and runner(['systemctl', 'stop', *services], timeout=900).returncode:
         raise RuntimeError('Could not stop service; units preserved')
     for path in present:
@@ -145,18 +181,21 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--data-dir', type=Path, default=Path('/srv/homeauto'))
     parser.add_argument('--backup-dir', type=Path, default=Path('/srv/homeauto-backups'))
+    parser.add_argument('--copy-to', type=Path, help='Off-device target for the backup service')
     parser.add_argument('--remove', action='store_true')
     parser.add_argument('--apply', action='store_true')
     args = parser.parse_args()
     try:
         if not args.apply:
             print('PLAN: remove managed units (backups retained)' if args.remove else
-                  'PLAN: install DISABLED daily backup timer (brief writer outage at 03:00 host time). '
+                  'PLAN: install DISABLED daily backup timer (brief writer outage at 03:00 host time'
+                  + (', then verified off-device copy' if args.copy_to else '') +
+                  ') and DISABLED 10-minute read-only health timer. '
                   'Test first: systemctl start homeauto-backup.service; journalctl -u homeauto-backup')
             return 0
         if os.geteuid() != 0:
             raise ValueError('Root required for unit files')
-        changed = remove() if args.remove else install(args.data_dir, args.backup_dir)
+        changed = remove() if args.remove else install(args.data_dir, args.backup_dir, copy_to=args.copy_to)
         if run(['systemctl', 'daemon-reload']).returncode:
             raise RuntimeError('Unit reload failed')
         if args.remove:
@@ -164,7 +203,7 @@ def main():
         else:
             print('SUCCESS: ' + ('installed ' + ', '.join(changed) if changed else 'units already current') +
                   ' (disabled). Test: systemctl start homeauto-backup.service; then enable explicitly: '
-                  'systemctl enable --now homeauto-backup.timer')
+                  'systemctl enable --now homeauto-backup.timer homeauto-health.timer')
         return 0
     except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired) as exc:
         print('STOP: ' + (str(exc) if isinstance(exc, (ValueError, RuntimeError)) else type(exc).__name__) +

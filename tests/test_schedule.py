@@ -31,7 +31,7 @@ class ScheduleTests(unittest.TestCase):
         return schedule.install(self.root, self.backups, self.units, runner=ok)
 
     def test_install_is_idempotent_and_unit_contents_are_safe(self):
-        self.assertEqual(sorted(self.install()), ['homeauto-backup.service', 'homeauto-backup.timer'])
+        self.assertEqual(sorted(self.install()), ['homeauto-backup.service', 'homeauto-backup.timer', 'homeauto-health.service', 'homeauto-health.timer'])
         self.assertEqual(self.install(), [])  # identical: no-op
         service = (self.units / 'homeauto-backup.service').read_text()
         for needle in ['ExecStopPost=', '--resume', 'KillMode=mixed', 'TimeoutStopSec=10min',
@@ -78,8 +78,8 @@ class ScheduleTests(unittest.TestCase):
         def record(argv, **kwargs):
             calls.append(argv); return ok(argv)
         self.assertEqual(sorted(schedule.remove(self.units, runner=record)),
-                         ['homeauto-backup.service', 'homeauto-backup.timer'])
-        self.assertIn(['systemctl', 'disable', '--now', 'homeauto-backup.timer'], calls)
+                         ['homeauto-backup.service', 'homeauto-backup.timer', 'homeauto-health.service', 'homeauto-health.timer'])
+        self.assertIn(['systemctl', 'disable', '--now', 'homeauto-backup.timer', 'homeauto-health.timer'], calls)
         self.assertFalse(list(self.units.iterdir()))
         (self.units / 'homeauto-backup.timer').write_text('[Timer]\n')  # someone else's unit
         with self.assertRaises(ValueError):
@@ -88,7 +88,8 @@ class ScheduleTests(unittest.TestCase):
 
     def test_partial_previous_install_removed(self):
         self.install()
-        (self.units / 'homeauto-backup.timer').unlink()
+        for name in ['homeauto-backup.timer', 'homeauto-health.service', 'homeauto-health.timer']:
+            (self.units / name).unlink()
         self.assertEqual(schedule.remove(self.units, runner=ok), ['homeauto-backup.service'])
 
     @unittest.skipUnless(shutil.which('systemd-analyze'), 'systemd-analyze unavailable')

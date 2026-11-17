@@ -36,17 +36,15 @@ jobs:
       - name: Real MQTT authentication and ACL checks
         run: .venv/bin/python tests/integration_broker.py
       - name: Consistent backup and isolated SQL restoration
-        if: matrix.os == 'ubuntu-24.04'
         run: sudo python3 tests/integration_recovery.py
       - name: Backup units under real systemd (manual start, timeout, SIGKILL)
-        if: matrix.os == 'ubuntu-24.04'
         run: sudo python3 tests/integration_systemd.py
       - name: Generated Zigbee2MQTT settings accepted by pinned image schema
-        if: matrix.os == 'ubuntu-24.04'
         run: python3 tests/integration_zigbee_config.py
       - name: Commissioning check over real broker and ACLs
-        if: matrix.os == 'ubuntu-24.04'
         run: sudo python3 tests/integration_commissioning.py
+      - name: Real HA/MQTT lifecycle (absent dongle, health, backup, failure recovery)
+        run: sudo python3 tests/integration_core_lifecycle.py
       - name: ARM64 and AMD64 image availability
         run: |
           mkdir -p artifacts

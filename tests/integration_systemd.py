@@ -86,6 +86,17 @@ def main():
             raise RuntimeError(f'Manual sandboxed backup failed: {archives()} {status()}')
         print('ok: manual start under ProtectSystem=strict/ProtectHome=read-only published a private archive')
 
+        # Exit 0/1 = success (SuccessExitStatus=1); 2 may legitimately come from the CI host's own disk
+        # usage, so judge the checks this test controls rather than the unit result.
+        x('systemctl start homeauto-health.service', check=False)
+        health = x('journalctl -u homeauto-health.service --no-pager -o cat -n 14').stdout
+        if ('PASS service-homeassistant' not in health or 'PASS backup:' not in health
+                or 'could not publish' in health or 'ERROR' in health or 'evidence' in health):
+            raise RuntimeError('Health unit failed under sandbox:\n' + health)
+        if x('systemctl is-enabled homeauto-health.timer', check=False).stdout.strip() != 'disabled':
+            raise RuntimeError('Health timer must stay disabled after install')
+        print('ok: health unit ran under the sandbox, saw the new backup and published')
+
         x("mkdir -p /etc/systemd/system/homeauto-backup.service.d && printf '[Service]\\nTimeoutStartSec=4s\\n' > "
           '/etc/systemd/system/homeauto-backup.service.d/ci.conf && systemctl daemon-reload')
         if x('systemctl start homeauto-backup.service', check=False).returncode == 0:

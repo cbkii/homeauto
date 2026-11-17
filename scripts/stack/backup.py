@@ -316,6 +316,7 @@ def main():
     parser.add_argument('--resume', action='store_true',
                         help='Only restart services left stopped by an interrupted backup (systemd ExecStopPost)')
     parser.add_argument('--keep', type=int, default=7, help='Retain this many completed archives; no deletion on failed backup')
+    parser.add_argument('--copy-to', type=Path, help='Mounted directory on another disk for a verified off-device copy')
     args = parser.parse_args()
     os.umask(0o077)
     install_signal_handlers()
@@ -332,6 +333,14 @@ def main():
                 prune(args.backup_dir, args.keep)
             except OSError:
                 LOG.warning('Retention pruning incomplete; new verified archive kept')
+            if args.copy_to:
+                from offdevice import copy_latest
+                try:
+                    copy_latest(args.backup_dir, args.copy_to, [args.data_dir, args.backup_dir])
+                except (OSError, ValueError, KeyError, RuntimeError) as exc:
+                    LOG.error('FAILED: local archive %s verified; off-device copy failed (%s)', completed.name,
+                              exc if isinstance(exc, ValueError) else type(exc).__name__)
+                    return 4
         return 0
     except Interrupted as exc:
         LOG.error('INTERRUPTED (%s): %s; original services %s', exc,
