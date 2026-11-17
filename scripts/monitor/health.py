@@ -61,8 +61,9 @@ def evaluate(facts: dict, *, backup_max_hours: float, copy_max_hours: float) -> 
         add('usb-bluetooth', 'PASS' if facts['hci_present'] else 'WARN',
             'controller present' if facts['hci_present'] else 'no hci controller (optional)')
     free, total = facts['free_bytes'], facts['total_bytes']
-    add('storage', 'FAIL' if free < 5 * 1024**3 or free < total * 0.10 else
-        'WARN' if free < total * 0.20 else 'PASS', f'{free / 1024**3:.1f} GiB free of {total / 1024**3:.1f} GiB')
+    # Absolute floors matter on small disks, percentages on large ones (1 TB NVMe: 5 % = 50 GB).
+    add('storage', 'FAIL' if free < 5 * 1024**3 or free < total * 0.05 else
+        'WARN' if free < 20 * 1024**3 or free < total * 0.15 else 'PASS', f'{free / 1024**3:.1f} GiB free of {total / 1024**3:.1f} GiB')
     backup = facts['backup_age_hours']
     add('backup', 'FAIL' if backup is None or backup > backup_max_hours else 'PASS',
         'no verified backup with recovered services recorded' if backup is None else

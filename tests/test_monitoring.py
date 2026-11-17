@@ -63,8 +63,11 @@ class HealthTests(unittest.TestCase):
         self.assertEqual(self.evaluate(copy_age_hours=None)['backup-offdevice'], 'WARN')
 
     def test_storage_thresholds(self):
-        self.assertEqual(self.evaluate(free_bytes=150 * 1024**3)['storage'], 'WARN')
-        self.assertEqual(self.evaluate(free_bytes=4 * 1024**3)['storage'], 'FAIL')
+        self.assertEqual(self.evaluate(free_bytes=100 * 1024**3)['storage'], 'WARN')   # 10 % of 1 TB
+        self.assertEqual(self.evaluate(free_bytes=40 * 1024**3)['storage'], 'FAIL')    # 4 %
+        self.assertEqual(self.evaluate(free_bytes=4 * 1024**3)['storage'], 'FAIL')     # absolute floor
+        self.assertEqual(self.evaluate(free_bytes=15 * 1024**3, total_bytes=64 * 1024**3)['storage'], 'WARN')
+        self.assertEqual(self.evaluate(free_bytes=200 * 1024**3)['storage'], 'PASS')
 
     def test_age_parsing_rejects_garbage(self):
         from datetime import datetime, timezone

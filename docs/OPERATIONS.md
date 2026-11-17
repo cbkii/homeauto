@@ -56,7 +56,7 @@ sudo python3 scripts/monitor/health.py --data-dir /srv/homeauto --backup-dir /sr
 | `service-homeassistant`, `service-mosquitto` | not running/healthy | |
 | optional services (Z2M, MariaDB, extras) | | not running/healthy; core unaffected |
 | `usb-coordinator`, `usb-bluetooth` | | stable link / hci controller absent |
-| `storage` (data filesystem) | < 5 GiB or < 10 % free | < 20 % free |
+| `storage` (data filesystem) | < 5 GiB or < 5 % free | < 20 GiB or < 15 % free |
 | `backup` | no verified backup with recovered services, or > 36 h old | |
 | `backup-offdevice` | | none recorded, or > 8 days old |
 

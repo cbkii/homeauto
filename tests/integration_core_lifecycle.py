@@ -39,7 +39,7 @@ def main():
     try:
         result = py(ROOT / 'scripts/stack/install.py', '--prepare', '--data-dir', root, '--with-zigbee',
                     '--zigbee-device', '/dev/serial/by-id/usb-absent-fixture-if00-port0', '--zigbee-adapter', 'ember',
-                    '--zigbee-network', 'new', '--project', 'life-' + secrets.token_hex(4))
+                    '--zigbee-rtscts', 'true', '--zigbee-network', 'new', '--project', 'life-' + secrets.token_hex(4))
         expect(result.returncode == 0, 'prepare failed: ' + result.stderr[-400:])
         # Gate: optional device loss. Absent coordinator -> exit 1, core healthy, Z2M never started.
         result = py(ROOT / 'scripts/stack/install.py', '--apply', '--data-dir', root)
