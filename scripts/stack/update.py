@@ -16,7 +16,12 @@ if not args.pull_only:
 try:
     owned_services(args.data_dir)
     result = run(compose(args.data_dir, 'pull'), timeout=600)
-    print('SUCCESS: images staged; no containers restarted' if result.returncode == 0 else 'FAILED: image pull')
+    if result.returncode == 0:
+        print('SUCCESS: images staged; no containers restarted')
+    else:
+        # Registry/tag/auth diagnostics from Docker; no credentials are passed on argv.
+        print('FAILED: image pull; Docker reported:', file=sys.stderr)
+        print('\n'.join((result.stderr or result.stdout).strip().splitlines()[-20:]), file=sys.stderr)
     sys.exit(result.returncode)
 except (OSError, ValueError, subprocess.TimeoutExpired):
     print('STOP: invalid state/runtime/timeout', file=sys.stderr)

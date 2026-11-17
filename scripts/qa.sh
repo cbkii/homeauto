@@ -2,7 +2,8 @@
 set -euo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)" || exit 3
 cd "$SCRIPT_DIR/.." || exit 3
-command -v shellcheck >/dev/null || { echo 'BLOCK: shellcheck required'; exit 2; }
+command -v shellcheck >/dev/null || { echo 'BLOCK: shellcheck required (apt install shellcheck)'; exit 2; }
+python3 -c 'import yaml' 2>/dev/null || { echo 'BLOCK: PyYAML required for tests (apt install python3-yaml)'; exit 2; }
 mapfile -d '' -t files < <(find . -type f -name '*.sh' -not -path './.git/*' -print0)
 for file in "${files[@]}"; do bash -n "$file" || exit 2; done
 shellcheck "${files[@]}" || exit 2

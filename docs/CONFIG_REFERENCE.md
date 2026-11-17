@@ -32,5 +32,6 @@ compatibility overlay. Manifest validation checks ARM64/AMD64 availability;
 actual runtime health remains a host gate. 4 KiB Q8B pages need no jemalloc flag.
 
 `deploy/legacy/docker-compose.yml` archives the prior network/data contract for
-inspection. Do not execute it from that directory (its relative binds assume
-the original repository root). Follow the legacy migration runbook instead.
+inspection. Do not execute this archived Compose file from any directory: its
+relative binds resolve under `deploy/legacy`, not the original repository root.
+Follow the legacy migration runbook instead.

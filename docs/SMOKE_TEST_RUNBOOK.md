@@ -25,6 +25,8 @@ and backup location. Publish only redacted results.
 9. Promote only after required checks pass; update canonical current state and
    version pins from actual observations. Keep Pi/router untouched until then.
 
-`scripts/smoke/run_release_smoke.sh --mode verify` writes a private JSON preflight
-report. It no longer automatically installs/upgrades/uninstalls a live stack.
+`scripts/smoke/run_release_smoke.sh --mode verify --output "artifacts/preflight-$(date -u +%Y%m%dT%H%M%SZ).json"`
+writes a private, timestamped JSON preflight report containing host checks only;
+record the qualification metadata above separately. It never installs, upgrades
+or uninstalls a live stack.
 Missing evidence is BLOCKED, never converted to a pass by CI.

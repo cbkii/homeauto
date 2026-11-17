@@ -28,7 +28,7 @@ def main():
     with tempfile.TemporaryDirectory() as temp:
         root = Path(temp) / 'app'
         prepare(root, ['zigbee'], '/dev/serial/by-id/usb-fixture-if00-port0', 'ember', False,
-                'z2m-schema-ci', 'Australia/Sydney', 'new')
+                'z2m-schema-ci', 'Australia/Sydney', 'new', True)
         data = root / 'zigbee2mqtt'
         data.chmod(0o755)
         (data / 'configuration.yaml').chmod(0o644)
