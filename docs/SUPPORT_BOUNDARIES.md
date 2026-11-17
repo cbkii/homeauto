@@ -2,8 +2,9 @@
 
 The Q8B is an application commissioning target, **not runtime qualified**.
 See [Q8B commissioning](platforms/Q8B.md) and the dated evidence ledger.
-The historical statements below describe the previous Pi release and are
-superseded where the Q8B runbook says otherwise. No kernel/firmware promotion
+The sections below describe the previous Pi release. They remain in force for
+Pi deployments, including the Pi 5 / Trixie compatibility gate; the Q8B runbook
+adds Q8B-specific gates and supersedes none of them. No kernel/firmware promotion
 is implied.
 
 # Support Boundaries

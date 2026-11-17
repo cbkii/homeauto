@@ -12,7 +12,7 @@
 Authoritative tracker for implementation status, release readiness, roadmap,
 and completion evidence.
 
-_Last updated: 2026-05-25 (Trixie compatibility planning pass)._
+_Last updated: 2026-11-17 (Q8B audit baseline; see status block above)._
 
 ---
 
@@ -133,6 +133,7 @@ Legend: ✅ Done, ⏳ Pending, ⚠️ Blocked (reason stated in next-step), ❌ 
 
 | Date | Change | Evidence |
 |---|---|---|
+| 2026-11-15 | Q8B audit baseline and commissioning gates (dated observations, not runtime qualification) | `docs/platforms/Q8B_AUDIT_2026-11-15.md`, `docs/platforms/Q8B.md` |
 | 2026-04-14 | Initial finalization baseline | repo commits |
 | 2026-04-14 | Agent/developer instruction corpus | `AGENTS.md` + `.github/instructions/` |
 | 2026-04-14 | Smoke verification tooling added | `scripts/smoke/run_release_smoke.sh` + `docs/SMOKE_TEST_RUNBOOK.md` |
