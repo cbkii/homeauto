@@ -31,8 +31,9 @@ class InstallTests(unittest.TestCase):
         self.root = Path(self.temp.name) / 'app'
 
     def prepare(self, **kwargs):
+        network = kwargs.get('network', 'new' if 'zigbee' in kwargs.get('profiles', []) else '')
         return install.prepare(self.root, kwargs.get('profiles', []), kwargs.get('device', ''),
-                               kwargs.get('adapter', ''), False, 'homeauto-test', 'Australia/Sydney')
+                               kwargs.get('adapter', ''), False, 'homeauto-test', 'Australia/Sydney', network)
 
     def test_plan_and_bad_cli_are_non_mutating(self):
         for flags, code in [([], 0), (['--profiles', 'unknown'], 2), (['--profiles'], 2)]:
@@ -77,6 +78,33 @@ class InstallTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.prepare()
 
+    def test_zigbee_requires_explicit_network_decision(self):
+        opts = dict(profiles=['zigbee'], device='/dev/serial/by-id/test', adapter='ember')
+        with self.assertRaises(ValueError):
+            self.prepare(network='', **opts)
+        self.assertFalse(self.root.exists())
+        with self.assertRaises(ValueError):
+            self.prepare(network='new')  # decision without the zigbee profile
+        self.assertFalse(self.root.exists())
+        result = subprocess.run([sys.executable, str(ROOT / 'scripts/stack/install.py'), '--prepare',
+                                 '--data-dir', str(self.root), '--with-zigbee', '--zigbee-device',
+                                 '/dev/serial/by-id/test', '--zigbee-adapter', 'ember'],
+                                capture_output=True, text=True, timeout=20)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn('--zigbee-network new', result.stderr)
+        self.assertFalse(self.root.exists())
+
+    def test_z2m_schema_version_and_discovery_acl(self):
+        self.prepare(profiles=['zigbee'], device='/dev/serial/by-id/test', adapter='ember')
+        z2m = json.loads((self.root / 'zigbee2mqtt/configuration.yaml').read_text())
+        self.assertEqual(z2m['version'], 5)
+        marker = json.loads((self.root / '.homeauto.json').read_text())
+        self.assertEqual(marker['zigbee_network'], 'new')
+        acl = (self.root / 'mosquitto/config/acl').read_text().split('\n\n')
+        zigbee = next(block for block in acl if block.startswith('user zigbee'))
+        self.assertIn('topic readwrite homeassistant/#', zigbee)
+        self.assertNotIn('ha/actions', zigbee)
+
     def test_no_shell_execution_or_interpolation(self):
         env = Path(self.temp.name) / 'env'
         env.write_text('X=$(touch unsafe)\n')
@@ -109,6 +137,27 @@ class PreflightTests(unittest.TestCase):
         self.assertEqual(rows['kernel-bridge']['status'], 'BLOCK')
         self.assertEqual(rows['kernel-veth']['status'], 'WARN')
 
+    def test_coordinator_variant_hint(self):
+        cases = {'SLZB-07': 'ember', 'SMLIGHT SLZB-07Mg24': 'ember', 'SLZB-07MG26': 'ember',
+                 'SLZB-07p7': 'zstack', 'SLZB-07p10': 'zstack'}
+        for product, adapter in cases.items():
+            self.assertEqual(preflight.variant_hint(product)[2], adapter, product)
+        for product in [None, '', 'CP2102N USB to UART Bridge Controller', 'SLZB-07X', 'SLZB-06p7']:
+            self.assertIsNone(preflight.variant_hint(product), product)
+
+    def test_coordinator_variant_mismatch_blocks_only_zigbee(self):
+        facts = self.facts()
+        facts.update(serial_present=True, serial_descriptor=dict(vid='10c4', pid='ea60', manufacturer='SMLIGHT',
+                                                                 product='SLZB-07p7'))
+        rows = {r['check']: r for r in preflight.checks(facts, {'zigbee'}, 'ember')}
+        self.assertEqual(rows['coordinator-variant']['status'], 'BLOCK')
+        rows = {r['check']: r for r in preflight.checks(facts, {'zigbee'}, 'zstack')}
+        self.assertEqual(rows['coordinator-variant']['status'], 'PASS')
+        facts['serial_descriptor']['product'] = 'CP2102N USB to UART Bridge Controller'
+        rows = {r['check']: r for r in preflight.checks(facts, {'zigbee'}, 'ember')}
+        self.assertEqual(rows['coordinator-variant']['status'], 'WARN')
+        self.assertNotIn('BLOCK', [r['status'] for r in preflight.checks(facts, set(), 'ember')])
+
     def test_existing_managed_port_warns(self):
         facts = self.facts(); facts.update(ports={8123}, managed_services=['homeassistant'])
         self.assertNotIn('BLOCK', [r['status'] for r in preflight.checks(facts, set())])
@@ -136,7 +185,7 @@ class LifecycleTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp) / 'app'
             install.prepare(root, ['zigbee'], '/dev/serial/by-id/absent', 'ember', False,
-                            'isolated-test', 'Australia/Sydney')
+                            'isolated-test', 'Australia/Sydney', 'new')
             calls = []
             def fake(argv, **kwargs):
                 calls.append(argv)
@@ -147,6 +196,29 @@ class LifecycleTests(unittest.TestCase):
             starts = [a for a in calls if 'up' in a]
             self.assertEqual(len(starts), 1)
             self.assertEqual(starts[0][-2:], ['homeassistant', 'mosquitto'])
+
+    def test_unacknowledged_first_zigbee_start_is_blocked_but_core_runs(self):
+        """Roots prepared before the acknowledgement existed must not form a network."""
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / 'app'
+            install.prepare(root, ['zigbee'], '/dev/serial/by-id/present', 'ember', False,
+                            'legacy-marker', 'Australia/Sydney', 'new')
+            marker = json.loads((root / '.homeauto.json').read_text())
+            del marker['zigbee_network']
+            (root / '.homeauto.json').write_text(json.dumps(marker))
+            calls = []
+            def fake(argv, **kwargs):
+                calls.append(argv)
+                return subprocess.CompletedProcess(argv, 0, '', '')
+            with patch.object(install, 'owned_services', return_value=set()), patch.object(install, 'run', side_effect=fake):
+                self.assertEqual(install.apply(root), 1)
+            self.assertFalse(any('zigbee2mqtt' in a for a in calls if 'up' in a))
+            (root / 'zigbee2mqtt/coordinator_backup.json').write_text('{}')  # network already formed by Z2M
+            calls.clear()
+            with patch.object(install, 'owned_services', return_value=set()), patch.object(install, 'run', side_effect=fake):
+                self.assertEqual(install.apply(root), 0)
+            self.assertTrue(any('zigbee2mqtt' in a for a in calls if 'up' in a))
 
 
 if __name__ == '__main__':

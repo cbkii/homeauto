@@ -67,6 +67,15 @@ def main():
             result = client('health', 'mosquitto_sub', '-t', 'homeassistant/ci', '-C', '1', '-W', '2')
             if marker in result.stdout:
                 raise RuntimeError('Health user escaped topic ACL')
+            # Z2M subscribes to homeassistant/# to clear stale discovery; it must receive retained config.
+            result = client('zigbee', 'mosquitto_sub', '-t', 'homeassistant/#', '-C', '1', '-W', '5')
+            if result.returncode or result.stdout.strip() != marker:
+                raise RuntimeError('Zigbee user cannot read Home Assistant discovery topics')
+            client('ha', 'mosquitto_pub', '-t', 'ha/actions/ci', '-m', marker, '-r', '-q', '1')
+            result = client('zigbee', 'mosquitto_sub', '-t', 'ha/actions/#', '-C', '1', '-W', '2')
+            if marker in result.stdout:
+                raise RuntimeError('Zigbee user escaped action topic ACL')
+            client('ha', 'mosquitto_pub', '-t', 'ha/actions/ci', '-r', '-n', '-q', '1')  # clear retained marker
             # Exercise exact production MQTTv5 subscription flags: a retained
             # publish to an already established subscription must stay rejected.
             import importlib.util
